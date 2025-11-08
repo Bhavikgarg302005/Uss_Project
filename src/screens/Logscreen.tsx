@@ -50,6 +50,7 @@ export default function Logscreen({ navigation }: any) {
       {/* Login Button */}
       <Pressable style={styles.loginButton} onPress={handleLogin}>
         <Text style={styles.loginButtonText}>Login</Text>
+        {/* Here is the API  we called that will be verifying and tell wheather such combination exitst or not*/}
       </Pressable>
 
       {/* OR Divider */}
