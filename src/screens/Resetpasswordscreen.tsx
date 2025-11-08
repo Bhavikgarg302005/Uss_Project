@@ -76,7 +76,11 @@ export default function Resetpasswordscreen({ navigation }: any) {
 
   // 🧭 Back button method
   const handleGoBack = () => {
-    navigation.navigate("Settings");
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate("Settings");
+    }
   };
 
   return (

@@ -15,6 +15,8 @@ export default function Logscreen({ navigation }: any) {
 
   const handleLogin = () => {
     console.log("Login pressed");
+    // TODO: Add authentication logic
+    navigation.navigate("Home");
   };
 
   return (
@@ -81,7 +83,7 @@ export default function Logscreen({ navigation }: any) {
 
       {/* Links */}
       <View style={styles.bottomLinks}>
-        <Pressable>
+        <Pressable onPress={() => navigation.navigate("ForgotPassword")}>
           <Text style={styles.linkText}>Forgot password?</Text>
         </Pressable>
 

@@ -37,7 +37,13 @@ const handleSignup = () => {
     return;
   }
 
-  Alert.alert("Success", "Signup submitted!");
+  // TODO: Add API call for signup
+  Alert.alert("Success", "Account created successfully!", [
+    {
+      text: "OK",
+      onPress: () => navigation.navigate("Login"),
+    },
+  ]);
 };
 
 
