@@ -20,6 +20,7 @@ export default function AddPasswordscreen({ navigation }: any) {
   const [passwordLength, setPasswordLength] = useState(16);
   const [securityLevel, setSecurityLevel] = useState("2");
 
+  // generate a password
   const generatePassword = () => {
     const symbols = "!@#$%^&*()_+-=[]{}|;:,.<>?";
     const numbers = "0123456789";

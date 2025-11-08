@@ -10,6 +10,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 
 interface PasswordItem {
   id: string;
@@ -19,6 +20,23 @@ interface PasswordItem {
 
 export default function Homescreen({ navigation }: any) {
   const [searchQuery, setSearchQuery] = useState("");
+  // Mock data for pending messages count - in real app, this would come from backend
+  const [pendingMessagesCount, setPendingMessagesCount] = useState(4);
+
+  // Refresh message count when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      // TODO: Fetch actual pending messages count from backend
+      // For now, we'll simulate a refresh
+      // In a real app, you would make an API call here
+      const fetchMessageCount = async () => {
+        // Simulate API call
+        // const count = await api.getPendingMessagesCount();
+        // setPendingMessagesCount(count);
+      };
+      fetchMessageCount();
+    }, [])
+  );
 
   const recentlyAdded: PasswordItem[] = [
     { id: "1", platform: "Facebook", accountCount: 3 },
@@ -65,9 +83,30 @@ export default function Homescreen({ navigation }: any) {
             </View>
             <Text style={styles.username}>Akshat V.</Text>
           </View>
-          <Pressable style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutText}>→ Logout</Text>
-          </Pressable>
+          <View style={styles.headerRight}>
+            <Pressable
+              style={styles.messagesButton}
+              onPress={() =>
+                navigation.navigate("Messages", {
+                  updateMessageCount: (count: number) => {
+                    setPendingMessagesCount(count);
+                  },
+                })
+              }
+            >
+              <Text style={styles.messagesIcon}>💬</Text>
+              {pendingMessagesCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {pendingMessagesCount > 9 ? "9+" : pendingMessagesCount}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+            <Pressable style={styles.logoutButton} onPress={handleLogout}>
+              <Text style={styles.logoutText}>→ Logout</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.divider} />
@@ -206,6 +245,43 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: "#1B1F3B",
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  messagesButton: {
+    position: "relative",
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 20,
+    backgroundColor: "#F4F6FA",
+    borderWidth: 1,
+    borderColor: "#E0E4EC",
+  },
+  messagesIcon: {
+    fontSize: 20,
+  },
+  badge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    backgroundColor: "#EF4444",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
   },
   logoutButton: {
     borderWidth: 1,

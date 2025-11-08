@@ -11,10 +11,19 @@ import {
   Alert,
 } from "react-native";
 
+interface TrustedUser {
+  id: string;
+  username: string;
+  email: string;
+  status: "pending" | "accepted" | "rejected";
+  requestedAt?: string;
+}
+
 export default function Settingscreen({ navigation }: any) {
-  const [trustedUsers, setTrustedUsers] = useState([
-    { id: "1", username: "User1", email: "user1@gmail.com" },
-    { id: "2", username: "User2", email: "user2@gmail.com" },
+  const [trustedUsers, setTrustedUsers] = useState<TrustedUser[]>([
+    { id: "1", username: "User1", email: "user1@gmail.com", status: "accepted" },
+    { id: "2", username: "User2", email: "user2@gmail.com", status: "accepted" },
+    { id: "3", username: "User3", email: "user3@gmail.com", status: "pending", requestedAt: "2 hours ago" },
   ]);
 
   const [showModal, setShowModal] = useState(false);
@@ -27,15 +36,24 @@ export default function Settingscreen({ navigation }: any) {
       return;
     }
 
-    // TODO: Securely verify master password with backend
-    setTrustedUsers((prev) => [
-      ...prev,
-      { id: Date.now().toString(), username: newUsername, email: `${newUsername}` },
-    ]);
+    // TODO: Securely verify master password with backend and send request
+    const newUser: TrustedUser = {
+      id: Date.now().toString(),
+      username: newUsername,
+      email: `${newUsername}@example.com`,
+      status: "pending",
+      requestedAt: "Just now",
+    };
+
+    setTrustedUsers((prev) => [...prev, newUser]);
     setShowModal(false);
     setNewUsername("");
     setMasterPassword("");
-    Alert.alert("Success", "Trusted user added securely!");
+    Alert.alert(
+      "Request Sent",
+      `Trusted user request sent to ${newUsername}. You will be notified when they respond.`,
+      [{ text: "OK" }]
+    );
   };
 
   const handleDelete = (id: string) => {
@@ -85,22 +103,42 @@ export default function Settingscreen({ navigation }: any) {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.trustedBox}>
-            <Text style={styles.trustedUsername}>{item.username}</Text>
-            <Text style={styles.trustedEmail}>{item.email}</Text>
-            <View style={styles.trustedActions}>
-              <Pressable onPress={() => handleDelete(item.id)}>
-                {/* <Image
-                  source={require("../assets/delete.png")}
-                  style={styles.icon}
-                /> */}
-              </Pressable>
-              <Pressable>
-                {/* <Image
-                  source={require("../assets/edit.png")}
-                  style={styles.icon}
-                /> */}
-              </Pressable>
+            <View style={styles.trustedUserInfo}>
+              <View style={styles.trustedUserDetails}>
+                <Text style={styles.trustedUsername}>{item.username}</Text>
+                <Text style={styles.trustedEmail}>{item.email}</Text>
+              </View>
+              <View style={styles.statusContainer}>
+                {item.status === "pending" && (
+                  <View style={[styles.statusBadge, styles.pendingBadge]}>
+                    <Text style={styles.pendingText}>Pending</Text>
+                  </View>
+                )}
+                {item.status === "accepted" && (
+                  <View style={[styles.statusBadge, styles.acceptedBadge]}>
+                    <Text style={styles.acceptedText}>Accepted</Text>
+                  </View>
+                )}
+                {item.status === "rejected" && (
+                  <View style={[styles.statusBadge, styles.rejectedBadge]}>
+                    <Text style={styles.rejectedText}>Rejected</Text>
+                  </View>
+                )}
+              </View>
             </View>
+            {item.requestedAt && item.status === "pending" && (
+              <Text style={styles.requestedAt}>Requested {item.requestedAt}</Text>
+            )}
+            {item.status === "accepted" && (
+              <View style={styles.trustedActions}>
+                <Pressable
+                  style={styles.deleteButton}
+                  onPress={() => handleDelete(item.id)}
+                >
+                  <Text style={styles.deleteButtonText}>Remove</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         )}
       />
@@ -133,9 +171,12 @@ export default function Settingscreen({ navigation }: any) {
                 <Text style={styles.cancelText}>Cancel</Text>
               </Pressable>
               <Pressable style={styles.addButton} onPress={handleAddTrustedUser}>
-                <Text style={styles.addText}>Add</Text>
+                <Text style={styles.addText}>Send Request</Text>
               </Pressable>
             </View>
+            <Text style={styles.modalNote}>
+              Note: The user will receive a request and can choose to accept or reject it.
+            </Text>
           </View>
         </View>
       </Modal>
@@ -208,23 +249,92 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0E4EC",
     borderRadius: 10,
-    padding: 10,
+    padding: 15,
     marginBottom: 10,
     backgroundColor: "#F9FAFC",
   },
+  trustedUserInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+  trustedUserDetails: {
+    flex: 1,
+  },
   trustedUsername: {
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 15,
+    fontWeight: "700",
     color: "#1B1F3B",
+    marginBottom: 4,
   },
   trustedEmail: {
     fontSize: 13,
     color: "#6A7181",
-    marginBottom: 5,
+  },
+  statusContainer: {
+    marginLeft: 10,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  pendingBadge: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  pendingText: {
+    color: "#D97706",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  acceptedBadge: {
+    backgroundColor: "#D1FAE5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  acceptedText: {
+    color: "#059669",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  rejectedBadge: {
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  rejectedText: {
+    color: "#DC2626",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  requestedAt: {
+    fontSize: 12,
+    color: "#9FA5B4",
+    fontStyle: "italic",
+    marginTop: 4,
   },
   trustedActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
+    marginTop: 10,
+  },
+  deleteButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  deleteButtonText: {
+    color: "#DC2626",
+    fontSize: 12,
+    fontWeight: "600",
   },
   icon: {
     width: 20,
@@ -286,5 +396,12 @@ const styles = StyleSheet.create({
   addText: {
     color: "#fff",
     fontWeight: "600",
+  },
+  modalNote: {
+    fontSize: 12,
+    color: "#6A7181",
+    textAlign: "center",
+    marginTop: 10,
+    fontStyle: "italic",
   },
 });

@@ -1,22 +1,73 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   Pressable,
   StyleSheet,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { PasswordSecurityService, PasswordAnalysis } from "../services/PasswordSecurityService";
+import { getAllMockPasswords } from "../services/MockPasswordData";
 
 export default function Securityscreen({ navigation }: any) {
+  const [analysis, setAnalysis] = useState<PasswordAnalysis | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastScanned, setLastScanned] = useState<string>("Just now");
+
+  useEffect(() => {
+    scanPasswords();
+  }, []);
+
+  const scanPasswords = async () => {
+    setLoading(true);
+    try {
+      // Get all passwords (in real app, this would come from your database)
+      const passwords = getAllMockPasswords();
+      
+      // Analyze passwords
+      const result = await PasswordSecurityService.analyzePasswords(passwords);
+      setAnalysis(result);
+      setLastScanned("Just now");
+    } catch (error) {
+      console.error("Error scanning passwords:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogout = () => {
     navigation.navigate("Login");
   };
 
   const handleAlertPress = (type: string) => {
     // Navigate to detailed view of compromised/weak/reused passwords
-    navigation.navigate("Vault", { filter: type });
+    navigation.navigate("SecurityDetails", { type, analysis });
   };
+
+  const getHealthColor = (score: number) => {
+    if (score >= 75) return "#10B981"; // Green
+    if (score >= 50) return "#F59E0B"; // Yellow
+    return "#EF4444"; // Red
+  };
+
+  const getHealthEmoji = (score: number) => {
+    if (score >= 75) return "🟢";
+    if (score >= 50) return "🟡";
+    return "🔴";
+  };
+
+  if (loading || !analysis) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4267FF" />
+          <Text style={styles.loadingText}>Scanning passwords...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -41,64 +92,128 @@ export default function Securityscreen({ navigation }: any) {
         {/* Security Overview Card */}
         <View style={styles.overviewCard}>
           <Text style={styles.shieldIcon}>🛡️</Text>
-          <Text style={styles.overviewTitle}>132 Passwords Secure & Safe</Text>
-          <Text style={styles.overviewSubtitle}>Last Scanned: 5 minutes ago</Text>
+          <Text style={styles.overviewTitle}>
+            {analysis.totalPasswords} Password{analysis.totalPasswords !== 1 ? "s" : ""} Analyzed
+          </Text>
+          <Text style={styles.overviewSubtitle}>Last Scanned: {lastScanned}</Text>
+          <View style={styles.healthScoreContainer}>
+            <Text style={styles.healthScoreLabel}>Security Health:</Text>
+            <View style={[styles.healthScoreBadge, { backgroundColor: getHealthColor(analysis.healthScore) + "20" }]}>
+              <Text style={[styles.healthScoreText, { color: getHealthColor(analysis.healthScore) }]}>
+                {getHealthEmoji(analysis.healthScore)} {analysis.healthScore}%
+              </Text>
+            </View>
+          </View>
+          <Pressable style={styles.rescanButton} onPress={scanPasswords}>
+            <Text style={styles.rescanButtonText}>🔄 Rescan Passwords</Text>
+          </Pressable>
         </View>
 
         {/* Summary Cards */}
         <View style={styles.summaryContainer}>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryIcon}>👥</Text>
-            <Text style={styles.summaryTitle}>7 Secure Groups</Text>
+            <Text style={styles.summaryIcon}>🔒</Text>
+            <Text style={styles.summaryTitle}>{analysis.strongCount} Strong</Text>
+            <Text style={styles.summarySubtitle}>Secure passwords</Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryIcon}>❤️</Text>
-            <Text style={styles.summaryTitle}>82% Healthy</Text>
+            <Text style={styles.summaryIcon}>👥</Text>
+            <Text style={styles.summaryTitle}>7 Groups</Text>
+            <Text style={styles.summarySubtitle}>Secure groups</Text>
           </View>
         </View>
 
         {/* Security Alerts */}
         <View style={styles.alertsSection}>
-          <Text style={styles.sectionTitle}>Security Alert:</Text>
+          <Text style={styles.sectionTitle}>Security Alerts:</Text>
 
-          <Pressable
-            style={styles.alertCard}
-            onPress={() => handleAlertPress("compromised")}
-          >
-            <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>3 Compromised Passwords</Text>
-              <Text style={styles.alertDescription}>
-                Your 'Google' and 2 other passwords found in Breach
-              </Text>
-              <Text style={styles.alertAction}>Review & Change Immediately →</Text>
-            </View>
-          </Pressable>
+          {analysis.compromisedCount > 0 && (
+            <Pressable
+              style={[styles.alertCard, styles.criticalAlert]}
+              onPress={() => handleAlertPress("compromised")}
+            >
+              <View style={styles.alertContent}>
+                <View style={styles.alertHeader}>
+                  <Text style={styles.alertIcon}>🚨</Text>
+                  <Text style={[styles.alertTitle, styles.criticalTitle]}>
+                    {analysis.compromisedCount} Compromised Password{analysis.compromisedCount !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+                <Text style={styles.alertDescription}>
+                  {analysis.compromisedPasswords.length > 0 && (
+                    <>
+                      Your '{analysis.compromisedPasswords[0].platform}' and{' '}
+                      {analysis.compromisedCount > 1
+                        ? `${analysis.compromisedCount - 1} other password${analysis.compromisedCount > 2 ? "s" : ""}`
+                        : ""}{' '}
+                      found in data breaches
+                    </>
+                  )}
+                </Text>
+                <Text style={styles.alertAction}>Review & Change Immediately →</Text>
+              </View>
+            </Pressable>
+          )}
 
-          <Pressable
-            style={styles.alertCard}
-            onPress={() => handleAlertPress("weak")}
-          >
-            <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>32 Weak Passwords</Text>
-              <Text style={styles.alertDescription}>
-                Your 'ITD' and 31 other passwords are vulnerable
-              </Text>
-              <Text style={styles.alertAction}>Review & Change Immediately →</Text>
-            </View>
-          </Pressable>
+          {analysis.weakCount > 0 && (
+            <Pressable
+              style={[styles.alertCard, styles.warningAlert]}
+              onPress={() => handleAlertPress("weak")}
+            >
+              <View style={styles.alertContent}>
+                <View style={styles.alertHeader}>
+                  <Text style={styles.alertIcon}>⚠️</Text>
+                  <Text style={[styles.alertTitle, styles.warningTitle]}>
+                    {analysis.weakCount} Weak Password{analysis.weakCount !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+                <Text style={styles.alertDescription}>
+                  {analysis.weakPasswords.length > 0 && (
+                    <>
+                      Your '{analysis.weakPasswords[0].platform}' and{' '}
+                      {analysis.weakCount > 1
+                        ? `${analysis.weakCount - 1} other password${analysis.weakCount > 2 ? "s" : ""}`
+                        : ""}{' '}
+                      are vulnerable
+                    </>
+                  )}
+                </Text>
+                <Text style={styles.alertAction}>Review & Strengthen →</Text>
+              </View>
+            </Pressable>
+          )}
 
-          <Pressable
-            style={styles.alertCard}
-            onPress={() => handleAlertPress("reused")}
-          >
-            <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>46 Reused Passwords</Text>
-              <Text style={styles.alertDescription}>
-                You have 46 Reused or similar passwords
-              </Text>
-              <Text style={styles.alertAction}>Review & Change Immediately →</Text>
+          {analysis.reusedCount > 0 && (
+            <Pressable
+              style={[styles.alertCard, styles.infoAlert]}
+              onPress={() => handleAlertPress("reused")}
+            >
+              <View style={styles.alertContent}>
+                <View style={styles.alertHeader}>
+                  <Text style={styles.alertIcon}>🔁</Text>
+                  <Text style={[styles.alertTitle, styles.infoTitle]}>
+                    {analysis.reusedCount} Reused Password{analysis.reusedCount !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+                <Text style={styles.alertDescription}>
+                  You have {analysis.reusedCount} reused or similar password{analysis.reusedCount !== 1 ? "s" : ""}
+                </Text>
+                <Text style={styles.alertAction}>Review & Replace →</Text>
+              </View>
+            </Pressable>
+          )}
+
+          {analysis.compromisedCount === 0 && analysis.weakCount === 0 && analysis.reusedCount === 0 && (
+            <View style={[styles.alertCard, styles.successAlert]}>
+              <View style={styles.alertContent}>
+                <Text style={styles.alertIcon}>✅</Text>
+                <Text style={[styles.alertTitle, styles.successTitle]}>All Clear!</Text>
+                <Text style={styles.alertDescription}>
+                  Your passwords are secure. No issues found.
+                </Text>
+              </View>
             </View>
-          </Pressable>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -246,6 +361,89 @@ const styles = StyleSheet.create({
     color: "#4267FF",
     fontWeight: "600",
     marginTop: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#6A7181",
+  },
+  healthScoreContainer: {
+    marginTop: 15,
+    alignItems: "center",
+  },
+  healthScoreLabel: {
+    fontSize: 14,
+    color: "#6A7181",
+    marginBottom: 8,
+  },
+  healthScoreBadge: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+  },
+  healthScoreText: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  rescanButton: {
+    marginTop: 15,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: "#4267FF",
+  },
+  rescanButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  summarySubtitle: {
+    fontSize: 12,
+    color: "#6A7181",
+    marginTop: 4,
+  },
+  alertHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  alertIcon: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  criticalAlert: {
+    borderColor: "#EF4444",
+    backgroundColor: "#FEE2E2",
+  },
+  criticalTitle: {
+    color: "#DC2626",
+  },
+  warningAlert: {
+    borderColor: "#F59E0B",
+    backgroundColor: "#FEF3C7",
+  },
+  warningTitle: {
+    color: "#D97706",
+  },
+  infoAlert: {
+    borderColor: "#3B82F6",
+    backgroundColor: "#DBEAFE",
+  },
+  infoTitle: {
+    color: "#2563EB",
+  },
+  successAlert: {
+    borderColor: "#10B981",
+    backgroundColor: "#D1FAE5",
+  },
+  successTitle: {
+    color: "#059669",
   },
 });
 

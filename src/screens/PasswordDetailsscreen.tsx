@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,41 +11,134 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { PasswordSecurityService, PasswordCheckResult } from "../services/PasswordSecurityService";
+import { getPasswordsByPlatform, getAllMockPasswords } from "../services/MockPasswordData";
 
 interface PasswordAccount {
   id: string;
   username: string;
   password: string;
-  strength: "Strong" | "Medium" | "Weak";
+  strength: "weak" | "medium" | "strong" | "very-strong";
+  securityCheck?: PasswordCheckResult;
+  isCompromised?: boolean;
+  isReused?: boolean;
 }
 
 export default function PasswordDetailsscreen({ navigation, route }: any) {
   const platform = route?.params?.platform || "Platform";
-  const [accounts, setAccounts] = useState<PasswordAccount[]>([
-    {
-      id: "1",
-      username: "user1@facebook.com",
-      password: "password123",
-      strength: "Strong",
-    },
-    {
-      id: "2",
-      username: "user2@facebook.com",
-      password: "weakpass",
-      strength: "Weak",
-    },
-    {
-      id: "3",
-      username: "user3@facebook.com",
-      password: "0A63eBCUsSCourseKiMKC#69",
-      strength: "Medium",
-    },
-  ]);
+  
+  // Get mock data for the platform
+  const platformPasswords = getPasswordsByPlatform(platform);
+  const initialAccounts: PasswordAccount[] = platformPasswords.length > 0
+    ? platformPasswords.map((p) => ({
+        id: p.id,
+        username: p.username,
+        password: p.password,
+        strength: "medium" as const,
+      }))
+    : [
+        {
+          id: "1",
+          username: "user1@facebook.com",
+          password: "password123",
+          strength: "weak" as const,
+        },
+        {
+          id: "2",
+          username: "user2@facebook.com",
+          password: "weakpass",
+          strength: "weak" as const,
+        },
+        {
+          id: "3",
+          username: "user3@facebook.com",
+          password: "0A63eBCUsSCourseKiMKC#69",
+          strength: "strong" as const,
+        },
+      ];
+
+  const [accounts, setAccounts] = useState<PasswordAccount[]>(initialAccounts);
   const [visiblePasswords, setVisiblePasswords] = useState<{ [key: string]: boolean }>({});
   const [editingAccount, setEditingAccount] = useState<PasswordAccount | null>(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [checkingSecurity, setCheckingSecurity] = useState<{ [key: string]: boolean }>({});
+
+  // Check security for all passwords on mount
+  useEffect(() => {
+    checkAllPasswordsSecurity();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const checkAllPasswordsSecurity = async () => {
+    const allPasswords = getAllMockPasswords();
+    
+    for (const account of accounts) {
+      setCheckingSecurity((prev) => ({ ...prev, [account.id]: true }));
+      
+      try {
+        // Check if compromised
+        const isCompromised = await PasswordSecurityService.checkCompromised(account.password);
+        
+        // Calculate strength
+        const securityCheck = PasswordSecurityService.calculateStrength(account.password);
+        
+        // Check if reused
+        const reuseCheck = PasswordSecurityService.checkReused(account.password, allPasswords);
+        
+        // Update account with security info
+        setAccounts((prev) =>
+          prev.map((acc) =>
+            acc.id === account.id
+              ? {
+                  ...acc,
+                  strength: securityCheck.strength,
+                  securityCheck,
+                  isCompromised,
+                  isReused: reuseCheck.isReused,
+                }
+              : acc
+          )
+        );
+      } catch (error) {
+        console.error(`Error checking security for account ${account.id}:`, error);
+      } finally {
+        setCheckingSecurity((prev) => ({ ...prev, [account.id]: false }));
+      }
+    }
+  };
+
+  // Check security when password is edited
+  const checkPasswordSecurity = async (password: string, accountId: string) => {
+    setCheckingSecurity((prev) => ({ ...prev, [accountId]: true }));
+    
+    try {
+      const allPasswords = getAllMockPasswords();
+      const isCompromised = await PasswordSecurityService.checkCompromised(password);
+      const securityCheck = PasswordSecurityService.calculateStrength(password);
+      const reuseCheck = PasswordSecurityService.checkReused(password, allPasswords);
+      
+      setAccounts((prev) =>
+        prev.map((acc) =>
+          acc.id === accountId
+            ? {
+                ...acc,
+                password,
+                strength: securityCheck.strength,
+                securityCheck,
+                isCompromised,
+                isReused: reuseCheck.isReused,
+              }
+            : acc
+        )
+      );
+    } catch (error) {
+      console.error("Error checking password security:", error);
+    } finally {
+      setCheckingSecurity((prev) => ({ ...prev, [accountId]: false }));
+    }
+  };
 
   const togglePasswordVisibility = (id: string) => {
     setVisiblePasswords((prev) => ({
@@ -56,14 +149,31 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
 
   const getStrengthColor = (strength: string) => {
     switch (strength) {
-      case "Strong":
-        return "#10B981";
-      case "Medium":
-        return "#F59E0B";
-      case "Weak":
-        return "#EF4444";
+      case "very-strong":
+        return "#10B981"; // Green
+      case "strong":
+        return "#10B981"; // Green
+      case "medium":
+        return "#F59E0B"; // Orange
+      case "weak":
+        return "#EF4444"; // Red
       default:
-        return "#6A7181";
+        return "#6A7181"; // Gray
+    }
+  };
+
+  const getStrengthLabel = (strength: string) => {
+    switch (strength) {
+      case "very-strong":
+        return "Very Strong";
+      case "strong":
+        return "Strong";
+      case "medium":
+        return "Medium";
+      case "weak":
+        return "Weak";
+      default:
+        return "Unknown";
     }
   };
 
@@ -71,13 +181,11 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
     setEditingAccount({ ...account });
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (editingAccount) {
-      setAccounts((prev) =>
-        prev.map((acc) =>
-          acc.id === editingAccount.id ? editingAccount : acc
-        )
-      );
+      // Check security of new password
+      await checkPasswordSecurity(editingAccount.password, editingAccount.id);
+      
       setEditingAccount(null);
       Alert.alert("Success", "Password updated successfully!");
     }
@@ -147,9 +255,14 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
                 value={visiblePasswords[account.id] ? account.password : "••••••••"}
                 secureTextEntry={!visiblePasswords[account.id]}
                 editable={editingAccount?.id === account.id}
-                onChangeText={(text) => {
+                onChangeText={async (text) => {
                   if (editingAccount) {
-                    setEditingAccount({ ...editingAccount, password: text });
+                    const updated = { ...editingAccount, password: text };
+                    setEditingAccount(updated);
+                    // Check security in real-time as user types (debounced)
+                    if (text.length >= 4) {
+                      await checkPasswordSecurity(text, editingAccount.id);
+                    }
                   }
                 }}
               />
@@ -165,22 +278,76 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
 
             <View style={styles.strengthContainer}>
               <Text style={styles.strengthLabel}>Password Strength:</Text>
-              <View
-                style={[
-                  styles.strengthBadge,
-                  { backgroundColor: getStrengthColor(account.strength) + "20" },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.strengthText,
-                    { color: getStrengthColor(account.strength) },
-                  ]}
-                >
-                  {account.strength}
-                </Text>
-              </View>
+              {checkingSecurity[account.id] ? (
+                <Text style={styles.checkingText}>Checking...</Text>
+              ) : (
+                <>
+                  <View
+                    style={[
+                      styles.strengthBadge,
+                      { backgroundColor: getStrengthColor(account.strength) + "20" },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.strengthText,
+                        { color: getStrengthColor(account.strength) },
+                      ]}
+                    >
+                      {getStrengthLabel(account.strength)}
+                    </Text>
+                  </View>
+                  {account.securityCheck && (
+                    <View style={styles.scoreContainer}>
+                      <Text style={styles.scoreText}>Score: {account.securityCheck.score}/100</Text>
+                    </View>
+                  )}
+                </>
+              )}
             </View>
+
+            {/* Security Warnings */}
+            {account.isCompromised && (
+              <View style={styles.warningContainer}>
+                <Text style={styles.warningIcon}>🚨</Text>
+                <View style={styles.warningContent}>
+                  <Text style={styles.warningTitle}>Compromised Password</Text>
+                  <Text style={styles.warningText}>
+                    This password was found in a data breach. Change it immediately!
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {account.isReused && account.securityCheck && (
+              <View style={styles.warningContainer}>
+                <Text style={styles.warningIcon}>🔁</Text>
+                <View style={styles.warningContent}>
+                  <Text style={styles.warningTitle}>Reused Password</Text>
+                  <Text style={styles.warningText}>
+                    This password is used in multiple accounts. Use a unique password for better security.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {account.securityCheck && account.securityCheck.issues.length > 0 && (
+              <View style={styles.issuesContainer}>
+                <Text style={styles.issuesTitle}>Issues:</Text>
+                {account.securityCheck.issues.slice(0, 3).map((issue, idx) => (
+                  <Text key={idx} style={styles.issueText}>• {issue}</Text>
+                ))}
+              </View>
+            )}
+
+            {account.securityCheck && account.securityCheck.recommendations.length > 0 && (
+              <View style={styles.recommendationsContainer}>
+                <Text style={styles.recommendationsTitle}>Recommendations:</Text>
+                {account.securityCheck.recommendations.slice(0, 2).map((rec, idx) => (
+                  <Text key={idx} style={styles.recommendationText}>• {rec}</Text>
+                ))}
+              </View>
+            )}
 
             {editingAccount?.id === account.id ? (
               <View style={styles.editActions}>
@@ -501,6 +668,85 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "600",
+  },
+  checkingText: {
+    fontSize: 12,
+    color: "#6A7181",
+    fontStyle: "italic",
+  },
+  scoreContainer: {
+    marginTop: 5,
+  },
+  scoreText: {
+    fontSize: 12,
+    color: "#6A7181",
+  },
+  warningContainer: {
+    flexDirection: "row",
+    backgroundColor: "#FEE2E2",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  warningIcon: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  warningContent: {
+    flex: 1,
+  },
+  warningTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#DC2626",
+    marginBottom: 4,
+  },
+  warningText: {
+    fontSize: 12,
+    color: "#991B1B",
+    lineHeight: 16,
+  },
+  issuesContainer: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: "#FEF3C7",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  issuesTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#D97706",
+    marginBottom: 6,
+  },
+  issueText: {
+    fontSize: 12,
+    color: "#92400E",
+    lineHeight: 18,
+    marginBottom: 2,
+  },
+  recommendationsContainer: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: "#DBEAFE",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  recommendationsTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#2563EB",
+    marginBottom: 6,
+  },
+  recommendationText: {
+    fontSize: 12,
+    color: "#1E40AF",
+    lineHeight: 18,
+    marginBottom: 2,
   },
 });
 

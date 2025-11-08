@@ -20,6 +20,8 @@ import PasswordDetailsscreen from "../screens/PasswordDetailsscreen";
 import SecurityWrapper from "../screens/SecurityWrapper";
 import AddPasswordscreen from "../screens/AddPasswordscreen";
 import SelectGroupsscreen from "../screens/SelectGroupsscreen";
+import Messagesscreen from "../screens/Messagesscreen";
+import SecurityDetailsscreen from "../screens/SecurityDetailsscreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -45,6 +47,8 @@ export default function RootNavigator() {
         <Stack.Screen name="Security" component={SecurityWrapper} />
         <Stack.Screen name="AddPassword" component={AddPasswordscreen} />
         <Stack.Screen name="SelectGroups" component={SelectGroupsscreen} />
+        <Stack.Screen name="Messages" component={Messagesscreen} />
+        <Stack.Screen name="SecurityDetails" component={SecurityDetailsscreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
