@@ -9,10 +9,11 @@ import {
   Modal,
   Alert,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PasswordSecurityService, PasswordCheckResult } from "../services/PasswordSecurityService";
-import { getPasswordsByPlatform, getAllMockPasswords } from "../services/MockPasswordData";
+import { passwordsAPI } from "../services/api";
 
 interface PasswordAccount {
   id: string;
@@ -27,54 +28,51 @@ interface PasswordAccount {
 export default function PasswordDetailsscreen({ navigation, route }: any) {
   const platform = route?.params?.platform || "Platform";
   
-  // Get mock data for the platform
-  const platformPasswords = getPasswordsByPlatform(platform);
-  const initialAccounts: PasswordAccount[] = platformPasswords.length > 0
-    ? platformPasswords.map((p) => ({
-        id: p.id,
-        username: p.username,
-        password: p.password,
-        strength: "medium" as const,
-      }))
-    : [
-        {
-          id: "1",
-          username: "user1@facebook.com",
-          password: "password123",
-          strength: "weak" as const,
-        },
-        {
-          id: "2",
-          username: "user2@facebook.com",
-          password: "weakpass",
-          strength: "weak" as const,
-        },
-        {
-          id: "3",
-          username: "user3@facebook.com",
-          password: "0A63eBCUsSCourseKiMKC#69",
-          strength: "strong" as const,
-        },
-      ];
-
-  const [accounts, setAccounts] = useState<PasswordAccount[]>(initialAccounts);
+  const [accounts, setAccounts] = useState<PasswordAccount[]>([]);
   const [visiblePasswords, setVisiblePasswords] = useState<{ [key: string]: boolean }>({});
   const [editingAccount, setEditingAccount] = useState<PasswordAccount | null>(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [checkingSecurity, setCheckingSecurity] = useState<{ [key: string]: boolean }>({});
+  const [loading, setLoading] = useState(true);
 
-  // Check security for all passwords on mount
+  // Load passwords for the platform
   useEffect(() => {
-    checkAllPasswordsSecurity();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    loadPlatformPasswords();
+  }, [platform]);
 
-  const checkAllPasswordsSecurity = async () => {
-    const allPasswords = getAllMockPasswords();
-    
-    for (const account of accounts) {
+  const loadPlatformPasswords = async () => {
+    setLoading(true);
+    try {
+      const data = await passwordsAPI.getByApplication(platform);
+      const transformedAccounts: PasswordAccount[] = data.map((pwd: any) => ({
+        id: pwd.password_id.toString(),
+        username: pwd.account_user_name,
+        password: pwd.application_password,
+        strength: getStrengthFromScore(pwd.pswd_strength || 50),
+      }));
+      setAccounts(transformedAccounts);
+      
+      // Check security for all passwords
+      await checkAllPasswordsSecurity(transformedAccounts);
+    } catch (error: any) {
+      console.error("Error loading passwords:", error);
+      Alert.alert("Error", "Failed to load passwords");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStrengthFromScore = (score: number): "weak" | "medium" | "strong" | "very-strong" => {
+    if (score < 40) return "weak";
+    if (score < 60) return "medium";
+    if (score < 80) return "strong";
+    return "very-strong";
+  };
+
+  const checkAllPasswordsSecurity = async (accountsToCheck: PasswordAccount[]) => {
+    for (const account of accountsToCheck) {
       setCheckingSecurity((prev) => ({ ...prev, [account.id]: true }));
       
       try {
@@ -84,23 +82,50 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
         // Calculate strength
         const securityCheck = PasswordSecurityService.calculateStrength(account.password);
         
-        // Check if reused
-        const reuseCheck = PasswordSecurityService.checkReused(account.password, allPasswords);
-        
-        // Update account with security info
-        setAccounts((prev) =>
-          prev.map((acc) =>
-            acc.id === account.id
-              ? {
-                  ...acc,
-                  strength: securityCheck.strength,
-                  securityCheck,
-                  isCompromised,
-                  isReused: reuseCheck.isReused,
-                }
-              : acc
-          )
-        );
+        // Check if reused (we'll need all passwords for this)
+        try {
+          const allPasswordsData = await passwordsAPI.getAll(0, 1000);
+          const allPasswords = allPasswordsData.passwords || allPasswordsData;
+          const reuseCheck = PasswordSecurityService.checkReused(
+            account.password,
+            allPasswords.map((p: any) => ({
+              id: p.password_id.toString(),
+              platform: p.application_name,
+              username: p.account_user_name,
+              password: p.application_password,
+            }))
+          );
+          
+          // Update account with security info
+          setAccounts((prev) =>
+            prev.map((acc) =>
+              acc.id === account.id
+                ? {
+                    ...acc,
+                    strength: securityCheck.strength,
+                    securityCheck,
+                    isCompromised,
+                    isReused: reuseCheck.isReused,
+                  }
+                : acc
+            )
+          );
+        } catch (reuseError) {
+          // If reuse check fails, just update with compromised and strength
+          setAccounts((prev) =>
+            prev.map((acc) =>
+              acc.id === account.id
+                ? {
+                    ...acc,
+                    strength: securityCheck.strength,
+                    securityCheck,
+                    isCompromised,
+                    isReused: false,
+                  }
+                : acc
+            )
+          );
+        }
       } catch (error) {
         console.error(`Error checking security for account ${account.id}:`, error);
       } finally {
@@ -114,25 +139,54 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
     setCheckingSecurity((prev) => ({ ...prev, [accountId]: true }));
     
     try {
-      const allPasswords = getAllMockPasswords();
       const isCompromised = await PasswordSecurityService.checkCompromised(password);
       const securityCheck = PasswordSecurityService.calculateStrength(password);
-      const reuseCheck = PasswordSecurityService.checkReused(password, allPasswords);
       
-      setAccounts((prev) =>
-        prev.map((acc) =>
-          acc.id === accountId
-            ? {
-                ...acc,
-                password,
-                strength: securityCheck.strength,
-                securityCheck,
-                isCompromised,
-                isReused: reuseCheck.isReused,
-              }
-            : acc
-        )
-      );
+      // Try to check reuse (may fail if we can't get all passwords)
+      try {
+        const allPasswordsData = await passwordsAPI.getAll(0, 1000);
+        const allPasswords = allPasswordsData.passwords || allPasswordsData;
+        const reuseCheck = PasswordSecurityService.checkReused(
+          password,
+          allPasswords.map((p: any) => ({
+            id: p.password_id.toString(),
+            platform: p.application_name,
+            username: p.account_user_name,
+            password: p.application_password,
+          }))
+        );
+        
+        setAccounts((prev) =>
+          prev.map((acc) =>
+            acc.id === accountId
+              ? {
+                  ...acc,
+                  password,
+                  strength: securityCheck.strength,
+                  securityCheck,
+                  isCompromised,
+                  isReused: reuseCheck.isReused,
+                }
+              : acc
+          )
+        );
+      } catch {
+        // If reuse check fails, just update with compromised and strength
+        setAccounts((prev) =>
+          prev.map((acc) =>
+            acc.id === accountId
+              ? {
+                  ...acc,
+                  password,
+                  strength: securityCheck.strength,
+                  securityCheck,
+                  isCompromised,
+                  isReused: false,
+                }
+              : acc
+          )
+        );
+      }
     } catch (error) {
       console.error("Error checking password security:", error);
     } finally {
@@ -183,11 +237,28 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
 
   const handleSaveEdit = async () => {
     if (editingAccount) {
-      // Check security of new password
-      await checkPasswordSecurity(editingAccount.password, editingAccount.id);
-      
-      setEditingAccount(null);
-      Alert.alert("Success", "Password updated successfully!");
+      try {
+        // Update password in backend
+        await passwordsAPI.update(
+          parseInt(editingAccount.id),
+          editingAccount.password,
+          editingAccount.username !== accounts.find((a) => a.id === editingAccount.id)?.username
+            ? editingAccount.username
+            : undefined,
+          platform
+        );
+        
+        // Check security of new password
+        await checkPasswordSecurity(editingAccount.password, editingAccount.id);
+        
+        // Reload passwords
+        await loadPlatformPasswords();
+        
+        setEditingAccount(null);
+        Alert.alert("Success", "Password updated successfully!");
+      } catch (error: any) {
+        Alert.alert("Error", error.message || "Failed to update password");
+      }
     }
   };
 
@@ -196,15 +267,23 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
     setDeleteModalVisible(true);
   };
 
-  const confirmDelete = () => {
-    if (deleteConfirm.toLowerCase() === "delete") {
+  const confirmDelete = async () => {
+    if (deleteConfirm.toLowerCase() !== "delete") {
+      Alert.alert("Error", "Please type 'delete' to confirm.");
+      return;
+    }
+
+    if (!accountToDelete) return;
+
+    try {
+      await passwordsAPI.delete(parseInt(accountToDelete));
       setAccounts((prev) => prev.filter((acc) => acc.id !== accountToDelete));
       setDeleteModalVisible(false);
       setDeleteConfirm("");
       setAccountToDelete(null);
       Alert.alert("Success", "Password deleted successfully!");
-    } else {
-      Alert.alert("Error", "Please type 'delete' to confirm.");
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to delete password");
     }
   };
 
@@ -232,7 +311,17 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {accounts.map((account) => (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4267FF" />
+            <Text style={styles.loadingText}>Loading passwords...</Text>
+          </View>
+        ) : accounts.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No passwords found for {platform}</Text>
+          </View>
+        ) : (
+          accounts.map((account) => (
           <View key={account.id} style={styles.accountCard}>
             <Text style={styles.label}>Username</Text>
             <View style={styles.inputContainer}>
@@ -393,7 +482,8 @@ export default function PasswordDetailsscreen({ navigation, route }: any) {
               </View>
             )}
           </View>
-        ))}
+          ))
+        )}
 
         {/* Notes Section */}
         <View style={styles.notesContainer}>
@@ -747,6 +837,23 @@ const styles = StyleSheet.create({
     color: "#1E40AF",
     lineHeight: 18,
     marginBottom: 2,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#6A7181",
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: "center",
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#6A7181",
   },
 });
 

@@ -10,31 +10,36 @@ import {
   Image,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
+import { authAPI, getAuthToken } from "../services/api";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-export default function Resetpasswordscreen({ navigation }: any) {
+export default function Resetpasswordscreen({ navigation, route }: any) {
+  const userId = route?.params?.userId;
   const [currentPassword, setCurrentPassword] = useState("");
   const [securityQuestion, setSecurityQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [questions, setQuestions] = useState<Array<{ question_id: number; question_text: string }>>([]);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(null);
 
-  const questions = [
-    "What is the Name of Your First School?",
-    "What is the Name of Your first Pet?",
-    "What is your favorite color?",
-    "What was the name of your first teacher?",
-  ];
-
-  // 🧠 TODO: Fetch security question from backend for logged-in user
   useEffect(() => {
-    // Example placeholder:
-    setSecurityQuestion("What is the Name of Your First School?");
+    loadSecurityQuestions();
   }, []);
 
+  const loadSecurityQuestions = async () => {
+    try {
+      const data = await authAPI.getSecurityQuestions();
+      setQuestions(data);
+    } catch (error) {
+      console.error("Error loading security questions:", error);
+    }
+  };
+
   const handleReset = async () => {
-    if (!currentPassword || !answer || !newPassword || !confirmPassword) {
-      Alert.alert("Error", "Please fill in all fields.");
+    if (!newPassword || !confirmPassword) {
+      Alert.alert("Error", "Please fill in new password fields.");
       return;
     }
 
@@ -43,32 +48,45 @@ export default function Resetpasswordscreen({ navigation }: any) {
       return;
     }
 
+    if (!currentPassword && (!selectedQuestionId || !answer)) {
+      Alert.alert("Error", "Please provide either current password or security answer.");
+      return;
+    }
+
     setLoading(true);
     try {
-      // 🧠 TODO: Call backend API to verify and update password securely
-      const response = await fetch("http://YOUR_BACKEND_IP:8000/auth/reset-password", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          current_password: currentPassword,
-          question: securityQuestion,
-          security_answer: answer,
-          new_password: newPassword,
-        }),
-      });
+      // Get user ID from route params or token
+      let resetUserId = userId;
+      if (!resetUserId) {
+        // TODO: Get user ID from token or stored user data
+        Alert.alert("Error", "User ID not found. Please login again.");
+        navigation.navigate("Login");
+        return;
+      }
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Password reset failed");
+      const response = await authAPI.resetPassword(
+        resetUserId,
+        newPassword,
+        currentPassword || undefined,
+        selectedQuestionId || undefined,
+        answer || undefined
+      );
 
-      Alert.alert("Success", "Password updated successfully!");
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Login" }],
-      });
+      if (response.success) {
+        Alert.alert("Success", "Password updated successfully!", [
+          {
+            text: "OK",
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "Login" }],
+              });
+            },
+          },
+        ]);
+      }
     } catch (err: any) {
-      Alert.alert("Error", err.message);
+      Alert.alert("Error", err.message || "Password reset failed");
     } finally {
       setLoading(false);
     }
@@ -84,15 +102,12 @@ export default function Resetpasswordscreen({ navigation }: any) {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Back Button */}
-      <Pressable onPress={handleGoBack} style={styles.backButton}>
-        {/* <Image
-          source={require("../assets/back.png")} // 🧠 Add an arrow-left icon here (or use text fallback)
-          style={styles.backIcon}
-        /> */}
-        <Text style={styles.backText}>Back</Text>
-      </Pressable>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <View style={styles.content}>
+        {/* Back Button */}
+        <Pressable onPress={handleGoBack} style={styles.backButton}>
+          <Text style={styles.backText}>← Back</Text>
+        </Pressable>
 
       {/* Title */}
       <Text style={styles.title}>Reset Master Password</Text>
@@ -100,63 +115,86 @@ export default function Resetpasswordscreen({ navigation }: any) {
         Ensure you remember your new password securely
       </Text>
 
-      {/* Current Password */}
-      <Text style={styles.inputLabel}>Current Password</Text>
-      <TextInput
-        placeholder="Enter current password"
-        placeholderTextColor="#9FA5B4"
-        secureTextEntry
-        style={styles.input}
-        value={currentPassword}
-        onChangeText={setCurrentPassword}
-      />
-
-      {/* Security Question */}
-      <Text style={styles.inputLabel}>Security Question</Text>
-      <View style={styles.pickerContainer}>
-        <Picker
-          selectedValue={securityQuestion}
-          onValueChange={(itemValue) => setSecurityQuestion(itemValue)}
-          dropdownIconColor="#1B1F3B"
-        >
-          <Picker.Item label="Select Question" value="" />
-          {questions.map((q, idx) => (
-            <Picker.Item key={idx} label={q} value={q} />
-          ))}
-        </Picker>
+      {/* Current Password (Optional if using security question) */}
+      <Text style={styles.inputLabel}>
+        Current Password {!currentPassword && "(or use security question below)"}
+      </Text>
+      <View style={styles.inputContainer}>
+        <TextInput
+          placeholder="Enter current password (optional)"
+          placeholderTextColor="#9FA5B4"
+          secureTextEntry
+          style={styles.input}
+          value={currentPassword}
+          onChangeText={setCurrentPassword}
+        />
       </View>
 
-      {/* Answer */}
-      <Text style={styles.inputLabel}>Answer</Text>
-      <TextInput
-        placeholder="Enter your answer"
-        placeholderTextColor="#9FA5B4"
-        style={styles.input}
-        value={answer}
-        onChangeText={setAnswer}
-      />
+      {/* Security Question (Optional if current password is provided) */}
+      {!currentPassword && (
+        <>
+          <Text style={styles.inputLabel}>Security Question</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={selectedQuestionId?.toString() || ""}
+              onValueChange={(itemValue) => {
+                setSelectedQuestionId(itemValue ? parseInt(itemValue) : null);
+                const question = questions.find((q) => q.question_id === parseInt(itemValue));
+                setSecurityQuestion(question?.question_text || "");
+              }}
+              dropdownIconColor="#1B1F3B"
+            >
+              <Picker.Item label="Select Question" value="" />
+              {questions.map((q) => (
+                <Picker.Item key={q.question_id} label={q.question_text} value={q.question_id.toString()} />
+              ))}
+            </Picker>
+          </View>
+        </>
+      )}
+
+      {/* Answer (Required if using security question) */}
+      {!currentPassword && (
+        <>
+          <Text style={styles.inputLabel}>Answer</Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              placeholder="Enter your answer"
+              placeholderTextColor="#9FA5B4"
+              style={styles.input}
+              value={answer}
+              onChangeText={setAnswer}
+              autoCapitalize="none"
+            />
+          </View>
+        </>
+      )}
 
       {/* New Password */}
       <Text style={styles.inputLabel}>New Password</Text>
-      <TextInput
-        placeholder="Enter new password"
-        placeholderTextColor="#9FA5B4"
-        secureTextEntry
-        style={styles.input}
-        value={newPassword}
-        onChangeText={setNewPassword}
-      />
+      <View style={styles.inputContainer}>
+        <TextInput
+          placeholder="Enter new password"
+          placeholderTextColor="#9FA5B4"
+          secureTextEntry
+          style={styles.input}
+          value={newPassword}
+          onChangeText={setNewPassword}
+        />
+      </View>
 
       {/* Confirm Password */}
       <Text style={styles.inputLabel}>Confirm New Password</Text>
-      <TextInput
-        placeholder="Re-enter new password"
-        placeholderTextColor="#9FA5B4"
-        secureTextEntry
-        style={styles.input}
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-      />
+      <View style={styles.inputContainer}>
+        <TextInput
+          placeholder="Re-enter new password"
+          placeholderTextColor="#9FA5B4"
+          secureTextEntry
+          style={styles.input}
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+        />
+      </View>
 
       {/* Reset Button */}
       <Pressable
@@ -170,7 +208,8 @@ export default function Resetpasswordscreen({ navigation }: any) {
           <Text style={styles.resetButtonText}>Reset Password</Text>
         )}
       </Pressable>
-    </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -178,24 +217,29 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  content: {
+    flex: 1,
     padding: 25,
-    paddingTop: 60,
   },
   backButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  backIcon: {
-    width: 22,
-    height: 22,
-    tintColor: "#1B1F3B",
-    marginRight: 6,
+    marginBottom: 20,
   },
   backText: {
-    color: "#1B1F3B",
+    color: "#4267FF",
     fontSize: 16,
     fontWeight: "600",
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F4F6FA",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 52,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#E0E4EC",
   },
   title: {
     fontSize: 28,
@@ -224,13 +268,9 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   input: {
-    backgroundColor: "#F4F6FA",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E0E4EC",
-    padding: 12,
-    fontSize: 15,
-    marginBottom: 15,
+    flex: 1,
+    fontSize: 16,
+    color: "#1B1F3B",
   },
   resetButton: {
     backgroundColor: "#4267FF",

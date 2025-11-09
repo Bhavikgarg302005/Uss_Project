@@ -8,8 +8,10 @@ import {
   ScrollView,
   Switch,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { passwordsAPI } from "../services/api";
 
 export default function AddPasswordscreen({ navigation }: any) {
   const [website, setWebsite] = useState("");
@@ -39,19 +41,28 @@ export default function AddPasswordscreen({ navigation }: any) {
     setPassword(generated);
   };
 
-  const handleAddToVault = () => {
+  const [loading, setLoading] = useState(false);
+
+  const handleAddToVault = async () => {
     if (!website || !username || !password) {
       Alert.alert("Error", "Please fill in all required fields.");
       return;
     }
 
-    // TODO: Save to backend
-    Alert.alert("Success", "Password added to vault successfully!", [
-      {
-        text: "OK",
-        onPress: () => navigation.goBack(),
-      },
-    ]);
+    setLoading(true);
+    try {
+      await passwordsAPI.create(website, username, password);
+      Alert.alert("Success", "Password added to vault successfully!", [
+        {
+          text: "OK",
+          onPress: () => navigation.goBack(),
+        },
+      ]);
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to add password");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -218,8 +229,16 @@ export default function AddPasswordscreen({ navigation }: any) {
         </View>
 
         {/* Add to Vault Button */}
-        <Pressable style={styles.addButton} onPress={handleAddToVault}>
-          <Text style={styles.addButtonText}>Add to Vault</Text>
+        <Pressable
+          style={[styles.addButton, loading && styles.addButtonDisabled]}
+          onPress={handleAddToVault}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.addButtonText}>Add to Vault</Text>
+          )}
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -389,6 +408,9 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "600",
+  },
+  addButtonDisabled: {
+    opacity: 0.7,
   },
 });
 

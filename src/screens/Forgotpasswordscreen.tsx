@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,32 +6,56 @@ import {
   Pressable,
   StyleSheet,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { authAPI } from "../services/api";
 
 export default function Forgotpasswordscreen({ navigation }: any) {
+  const [username, setUsername] = useState("");
   const [securityQuestion, setSecurityQuestion] = useState("");
   const [answer, setAnswer] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [questions, setQuestions] = useState<Array<{ question_id: number; question_text: string }>>([]);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(null);
 
-  const questions = [
-    "What is the Name of Your First School?",
-    "What is the Name of Your first Pet?",
-    "What is your favorite color?",
-    "What was the name of your first teacher?",
-    "What was the name of your first best friend?",
-    "What is your favorite book or movie?",
-  ];
+  useEffect(() => {
+    loadSecurityQuestions();
+  }, []);
 
-  const handleSubmit = () => {
-    if (!securityQuestion || !answer) {
+  const loadSecurityQuestions = async () => {
+    try {
+      const data = await authAPI.getSecurityQuestions();
+      setQuestions(data);
+    } catch (error) {
+      console.error("Error loading security questions:", error);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!username || !selectedQuestionId || !answer) {
       Alert.alert("Error", "Please fill in all fields.");
       return;
     }
 
-    // TODO: Verify answer with backend
-    Alert.alert("Success", "Answer verified! You can now reset your password.");
-    navigation.navigate("ResetPassword");
+    setLoading(true);
+    try {
+      const response = await authAPI.forgotPassword(username, selectedQuestionId, answer);
+      
+      if (response.success && response.user_id) {
+        Alert.alert("Success", "Answer verified! You can now reset your password.", [
+          {
+            text: "OK",
+            onPress: () => navigation.navigate("ResetPassword", { userId: response.user_id }),
+          },
+        ]);
+      }
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Invalid username or answer");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -48,20 +72,37 @@ export default function Forgotpasswordscreen({ navigation }: any) {
         {/* Title */}
         <Text style={styles.title}>Forgot Password</Text>
         <Text style={styles.subtitle}>
-          Answer your security question to reset your password
+          Enter your username and answer your security question to reset your password
         </Text>
+
+        {/* Username */}
+        <Text style={styles.inputLabel}>Username</Text>
+        <View style={styles.inputContainer}>
+          <TextInput
+            placeholder="Enter your username"
+            placeholderTextColor="#9FA5B4"
+            style={styles.input}
+            value={username}
+            onChangeText={setUsername}
+            autoCapitalize="none"
+          />
+        </View>
 
         {/* Security Question */}
         <Text style={styles.inputLabel}>Security Question</Text>
         <View style={styles.pickerContainer}>
           <Picker
-            selectedValue={securityQuestion}
-            onValueChange={(itemValue) => setSecurityQuestion(itemValue)}
+            selectedValue={selectedQuestionId?.toString() || ""}
+            onValueChange={(itemValue) => {
+              setSelectedQuestionId(itemValue ? parseInt(itemValue) : null);
+              const question = questions.find((q) => q.question_id === parseInt(itemValue));
+              setSecurityQuestion(question?.question_text || "");
+            }}
             dropdownIconColor="#1B1F3B"
           >
             <Picker.Item label="Select a question" value="" />
-            {questions.map((q, idx) => (
-              <Picker.Item key={idx} label={q} value={q} />
+            {questions.map((q) => (
+              <Picker.Item key={q.question_id} label={q.question_text} value={q.question_id.toString()} />
             ))}
           </Picker>
         </View>
@@ -80,8 +121,16 @@ export default function Forgotpasswordscreen({ navigation }: any) {
         </View>
 
         {/* Submit Button */}
-        <Pressable style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Continue</Text>
+        <Pressable
+          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.submitButtonText}>Continue</Text>
+          )}
         </Pressable>
       </View>
     </SafeAreaView>
@@ -160,6 +209,9 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "600",
+  },
+  submitButtonDisabled: {
+    opacity: 0.7,
   },
 });
 

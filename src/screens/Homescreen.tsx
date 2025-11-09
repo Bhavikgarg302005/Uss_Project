@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,9 +8,11 @@ import {
   ScrollView,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
+import { passwordsAPI, messagesAPI } from "../services/api";
 
 interface PasswordItem {
   id: string;
@@ -20,30 +22,59 @@ interface PasswordItem {
 
 export default function Homescreen({ navigation }: any) {
   const [searchQuery, setSearchQuery] = useState("");
-  // Mock data for pending messages count - in real app, this would come from backend
-  const [pendingMessagesCount, setPendingMessagesCount] = useState(4);
+  const [pendingMessagesCount, setPendingMessagesCount] = useState(0);
+  const [recentlyAdded, setRecentlyAdded] = useState<PasswordItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Refresh message count when screen is focused
+  useEffect(() => {
+    loadRecentPasswords();
+    loadMessageCount();
+  }, []);
+
+  // Refresh data when screen is focused
   useFocusEffect(
     React.useCallback(() => {
-      // TODO: Fetch actual pending messages count from backend
-      // For now, we'll simulate a refresh
-      // In a real app, you would make an API call here
-      const fetchMessageCount = async () => {
-        // Simulate API call
-        // const count = await api.getPendingMessagesCount();
-        // setPendingMessagesCount(count);
-      };
-      fetchMessageCount();
+      loadRecentPasswords();
+      loadMessageCount();
     }, [])
   );
 
-  const recentlyAdded: PasswordItem[] = [
-    { id: "1", platform: "Facebook", accountCount: 3 },
-    { id: "2", platform: "Amazon", accountCount: 2 },
-    { id: "3", platform: "Netflix", accountCount: 2 },
-    { id: "4", platform: "Instagram", accountCount: 4 },
-  ];
+  const loadRecentPasswords = async () => {
+    try {
+      const data = await passwordsAPI.getRecent(4);
+      const recent = data.map((pwd: any, index: number) => ({
+        id: pwd.password_id.toString(),
+        platform: pwd.application_name,
+        accountCount: 1, // Will be updated when we get platform counts
+      }));
+      
+      // Group by platform
+      const platformMap = new Map<string, number>();
+      recent.forEach((item: PasswordItem) => {
+        const count = platformMap.get(item.platform) || 0;
+        platformMap.set(item.platform, count + 1);
+      });
+      
+      const grouped = Array.from(platformMap.entries()).map(([platform, accountCount], index) => ({
+        id: (index + 1).toString(),
+        platform,
+        accountCount,
+      }));
+      
+      setRecentlyAdded(grouped);
+    } catch (error) {
+      console.error("Error loading recent passwords:", error);
+    }
+  };
+
+  const loadMessageCount = async () => {
+    try {
+      const data = await messagesAPI.getCount();
+      setPendingMessagesCount(data.count || 0);
+    } catch (error) {
+      console.error("Error loading message count:", error);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [

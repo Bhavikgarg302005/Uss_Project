@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,8 +6,10 @@ import {
   StyleSheet,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { messagesAPI } from "../services/api";
 
 interface Message {
   id: string;
@@ -23,65 +25,86 @@ interface Message {
 export default function Messagesscreen({ navigation, route }: any) {
   // Get callback from route params to update message count in Home screen
   const updateMessageCount = route?.params?.updateMessageCount;
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      type: "trusted_user_request",
-      from: "John Doe",
-      fromEmail: "john@example.com",
-      message: "wants to add you as a trusted user",
-      timestamp: "2 hours ago",
-      status: "pending",
-    },
-    {
-      id: "2",
-      type: "group_invitation",
-      from: "Sarah Smith",
-      groupName: "Design Club",
-      message: "invited you to join the group",
-      timestamp: "5 hours ago",
-      status: "pending",
-    },
-    {
-      id: "3",
-      type: "trusted_user_request",
-      from: "Mike Johnson",
-      fromEmail: "mike@example.com",
-      message: "wants to add you as a trusted user",
-      timestamp: "1 day ago",
-      status: "pending",
-    },
-    {
-      id: "4",
-      type: "group_invitation",
-      from: "Emily Brown",
-      groupName: "Tech Council",
-      message: "invited you to join the group",
-      timestamp: "2 days ago",
-      status: "pending",
-    },
-  ]);
+  useEffect(() => {
+    loadMessages();
+  }, []);
 
-  const handleAccept = (messageId: string) => {
+  const loadMessages = async () => {
+    setLoading(true);
+    try {
+      const data = await messagesAPI.getAll();
+      // Transform API response to Message format
+      const transformedMessages: Message[] = data.map((msg: any) => ({
+        id: msg.id || msg.message_id || String(Date.now()),
+        type: msg.type,
+        from: msg.from || msg.from_user,
+        fromEmail: msg.from_email || msg.fromEmail,
+        groupName: msg.group_name || msg.groupName,
+        message: msg.message,
+        timestamp: formatTimestamp(msg.timestamp),
+        status: msg.status || "pending",
+      }));
+      setMessages(transformedMessages);
+      
+      // Update message count
+      if (updateMessageCount) {
+        updateMessageCount(transformedMessages.filter((m) => m.status === "pending").length);
+      }
+    } catch (error: any) {
+      console.error("Error loading messages:", error);
+      Alert.alert("Error", "Failed to load messages");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTimestamp = (timestamp: string): string => {
+    // Simple timestamp formatting (can be improved)
+    if (!timestamp) return "Just now";
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMins / 60);
+      const diffDays = Math.floor(diffHours / 24);
+      
+      if (diffMins < 1) return "Just now";
+      if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? "s" : ""} ago`;
+      if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+      return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+    } catch {
+      return timestamp;
+    }
+  };
+
+  const handleAccept = async (messageId: string) => {
     const message = messages.find((m) => m.id === messageId);
     
-    // Update message status immediately
-    setMessages((prev) => {
-      const updated = prev.map((msg) =>
-        msg.id === messageId
-          ? { ...msg, status: "accepted" as const }
-          : msg
-      );
-      // Update message count in parent screen
-      if (updateMessageCount) {
-        const pendingCount = updated.filter((m) => m.status === "pending").length;
-        updateMessageCount(pendingCount);
-      }
-      return updated;
-    });
+    if (!message) return;
 
-    if (message) {
+    try {
+      // Call backend API to accept message
+      await messagesAPI.accept(messageId);
+      
+      // Update message status immediately
+      setMessages((prev) => {
+        const updated = prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, status: "accepted" as const }
+            : msg
+        );
+        // Update message count in parent screen
+        if (updateMessageCount) {
+          const pendingCount = updated.filter((m) => m.status === "pending").length;
+          updateMessageCount(pendingCount);
+        }
+        return updated;
+      });
+
       if (message.type === "trusted_user_request") {
         Alert.alert(
           "Accepted",
@@ -90,18 +113,8 @@ export default function Messagesscreen({ navigation, route }: any) {
             {
               text: "OK",
               onPress: () => {
-                // TODO: Send acceptance to backend
-                // After a delay, remove the message
-                setTimeout(() => {
-                  setMessages((prev) => {
-                    const updated = prev.filter((m) => m.id !== messageId);
-                    // Update message count in parent screen
-                    if (updateMessageCount) {
-                      updateMessageCount(updated.filter((m) => m.status === "pending").length);
-                    }
-                    return updated;
-                  });
-                }, 2000);
+                // Reload messages to remove accepted ones
+                loadMessages();
               },
             },
           ]
@@ -114,78 +127,71 @@ export default function Messagesscreen({ navigation, route }: any) {
             {
               text: "OK",
               onPress: () => {
-                // TODO: Send acceptance to backend and add user to group
-                setTimeout(() => {
-                  setMessages((prev) => {
-                    const updated = prev.filter((m) => m.id !== messageId);
-                    // Update message count in parent screen
-                    if (updateMessageCount) {
-                      updateMessageCount(updated.filter((m) => m.status === "pending").length);
-                    }
-                    return updated;
-                  });
-                }, 2000);
+                // Reload messages to remove accepted ones
+                loadMessages();
               },
             },
           ]
         );
       }
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to accept message");
     }
   };
 
-  const handleReject = (messageId: string) => {
+  const handleReject = async (messageId: string) => {
     const message = messages.find((m) => m.id === messageId);
     
+    if (!message) return;
+
     Alert.alert(
       "Reject Request",
-      message?.type === "trusted_user_request"
+      message.type === "trusted_user_request"
         ? `Are you sure you want to reject ${message.from}'s trusted user request?`
-        : `Are you sure you want to reject the invitation to ${message?.groupName}?`,
+        : `Are you sure you want to reject the invitation to ${message.groupName}?`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Reject",
           style: "destructive",
-          onPress: () => {
-            // Update message status immediately
-            setMessages((prev) => {
-              const updated = prev.map((msg) =>
-                msg.id === messageId
-                  ? { ...msg, status: "rejected" as const }
-                  : msg
-              );
-              // Update message count in parent screen
-              if (updateMessageCount) {
-                const pendingCount = updated.filter((m) => m.status === "pending").length;
-                updateMessageCount(pendingCount);
-              }
-              return updated;
-            });
+          onPress: async () => {
+            try {
+              // Call backend API to reject message
+              await messagesAPI.reject(messageId);
+              
+              // Update message status immediately
+              setMessages((prev) => {
+                const updated = prev.map((msg) =>
+                  msg.id === messageId
+                    ? { ...msg, status: "rejected" as const }
+                    : msg
+                );
+                // Update message count in parent screen
+                if (updateMessageCount) {
+                  const pendingCount = updated.filter((m) => m.status === "pending").length;
+                  updateMessageCount(pendingCount);
+                }
+                return updated;
+              });
 
-            Alert.alert(
-              "Rejected",
-              message?.type === "trusted_user_request"
-                ? `You have rejected ${message.from}'s trusted user request.`
-                : `You have rejected the invitation to ${message?.groupName}.`,
-              [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    // TODO: Send rejection to backend
-                    setTimeout(() => {
-                      setMessages((prev) => {
-                        const updated = prev.filter((m) => m.id !== messageId);
-                        // Update message count in parent screen
-                        if (updateMessageCount) {
-                          updateMessageCount(updated.filter((m) => m.status === "pending").length);
-                        }
-                        return updated;
-                      });
-                    }, 2000);
+              Alert.alert(
+                "Rejected",
+                message.type === "trusted_user_request"
+                  ? `You have rejected ${message.from}'s trusted user request.`
+                  : `You have rejected the invitation to ${message.groupName}.`,
+                [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      // Reload messages to remove rejected ones
+                      loadMessages();
+                    },
                   },
-                },
-              ]
-            );
+                ]
+              );
+            } catch (error: any) {
+              Alert.alert("Error", error.message || "Failed to reject message");
+            }
           },
         },
       ]
@@ -253,7 +259,12 @@ export default function Messagesscreen({ navigation, route }: any) {
         <View style={styles.placeholder} />
       </View>
 
-      {pendingMessages.length === 0 ? (
+      {loading ? (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color="#4267FF" />
+          <Text style={styles.emptyText}>Loading messages...</Text>
+        </View>
+      ) : pendingMessages.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyIcon}>📭</Text>
           <Text style={styles.emptyText}>No new messages</Text>

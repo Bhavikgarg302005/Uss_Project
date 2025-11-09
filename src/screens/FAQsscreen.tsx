@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,8 +8,10 @@ import {
   FlatList,
   Modal,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { faqsAPI } from "../services/api";
 
 interface FAQ {
   id: string;
@@ -22,34 +24,57 @@ export default function FAQsscreen({ navigation }: any) {
   const [expandedFAQ, setExpandedFAQ] = useState<string | null>(null);
   const [showAddQueryModal, setShowAddQueryModal] = useState(false);
   const [newQuery, setNewQuery] = useState("");
+  const [faqs, setFaqs] = useState<FAQ[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const faqs: FAQ[] = [
-    {
-      id: "1",
-      question: "How to Add Password",
-      answer: "To add a password, go to the Vault screen and click on the 'Add Password' button. Fill in the website/platform, username, and password fields, then click 'Add to Vault'.",
-    },
-    {
-      id: "2",
-      question: "How to see vault",
-      answer: "To view your vault, navigate to the Vault section from the bottom navigation bar. You will see all your saved passwords organized by platform.",
-    },
-    {
-      id: "3",
-      question: "How to see Insecure Password",
-      answer: "To view insecure passwords, go to the Security screen from the navigation. You will see alerts for compromised, weak, and reused passwords.",
-    },
-    {
-      id: "4",
-      question: "How to check security",
-      answer: "Navigate to the Security screen to view your security overview, including password health, security alerts, and recent scans.",
-    },
-    {
-      id: "5",
-      question: "How to Add Users",
-      answer: "To add trusted users, go to Settings and click on 'Add Emergency Access'. Enter the user's details and your master password to confirm.",
-    },
-  ];
+  useEffect(() => {
+    loadFAQs();
+  }, []);
+
+  const loadFAQs = async () => {
+    setLoading(true);
+    try {
+      const data = await faqsAPI.getAll();
+      const transformedFAQs: FAQ[] = data.map((faq: any) => ({
+        id: faq.faq_id.toString(),
+        question: faq.question,
+        answer: faq.answer,
+      }));
+      setFaqs(transformedFAQs);
+    } catch (error) {
+      console.error("Error loading FAQs:", error);
+      // Fallback to default FAQs
+      setFaqs([
+        {
+          id: "1",
+          question: "How to Add Password",
+          answer: "To add a password, go to the Vault screen and click on the 'Add Password' button. Fill in the website/platform, username, and password fields, then click 'Add to Vault'.",
+        },
+        {
+          id: "2",
+          question: "How to see vault",
+          answer: "To view your vault, navigate to the Vault section from the bottom navigation bar. You will see all your saved passwords organized by platform.",
+        },
+        {
+          id: "3",
+          question: "How to see Insecure Password",
+          answer: "To view insecure passwords, go to the Security screen from the navigation. You will see alerts for compromised, weak, and reused passwords.",
+        },
+        {
+          id: "4",
+          question: "How to check security",
+          answer: "Navigate to the Security screen to view your security overview, including password health, security alerts, and recent scans.",
+        },
+        {
+          id: "5",
+          question: "How to Add Users",
+          answer: "To add trusted users, go to Settings and click on 'Add Emergency Access'. Enter the user's details and your master password to confirm.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredFAQs = faqs.filter((faq) =>
     faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -99,28 +124,35 @@ export default function FAQsscreen({ navigation }: any) {
       </View>
 
       {/* FAQs List */}
-      <FlatList
-        data={filteredFAQs}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => {
-          const isExpanded = expandedFAQ === item.id;
-          return (
-            <Pressable
-              style={styles.faqItem}
-              onPress={() => toggleFAQ(item.id)}
-            >
-              <View style={styles.faqHeader}>
-                <Text style={styles.faqQuestion}>{item.question}</Text>
-                <Text style={styles.expandIcon}>{isExpanded ? "▲" : "▼"}</Text>
-              </View>
-              {isExpanded && (
-                <Text style={styles.faqAnswer}>{item.answer}</Text>
-              )}
-            </Pressable>
-          );
-        }}
-      />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4267FF" />
+          <Text style={styles.loadingText}>Loading FAQs...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredFAQs}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => {
+            const isExpanded = expandedFAQ === item.id;
+            return (
+              <Pressable
+                style={styles.faqItem}
+                onPress={() => toggleFAQ(item.id)}
+              >
+                <View style={styles.faqHeader}>
+                  <Text style={styles.faqQuestion}>{item.question}</Text>
+                  <Text style={styles.expandIcon}>{isExpanded ? "▲" : "▼"}</Text>
+                </View>
+                {isExpanded && (
+                  <Text style={styles.faqAnswer}>{item.answer}</Text>
+                )}
+              </Pressable>
+            );
+          }}
+        />
+      )}
 
       {/* Add Query Section */}
       <View style={styles.addQuerySection}>
@@ -345,6 +377,17 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "600",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#6A7181",
   },
 });
 

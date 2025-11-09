@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,8 +6,11 @@ import {
   Pressable,
   StyleSheet,
   FlatList,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { passwordsAPI } from "../services/api";
 
 interface PasswordPlatform {
   id: string;
@@ -17,19 +20,42 @@ interface PasswordPlatform {
 
 export default function Vaultscreen({ navigation, route }: any) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [platforms, setPlatforms] = useState<PasswordPlatform[]>([]);
+  const [loading, setLoading] = useState(true);
   const category = route?.params?.category || "all";
   const search = route?.params?.search || "";
 
-  const platforms: PasswordPlatform[] = [
-    { id: "1", name: "Facebook", accountCount: 3 },
-    { id: "2", name: "Amazon", accountCount: 2 },
-    { id: "3", name: "Netflix", accountCount: 2 },
-    { id: "4", name: "Instagram", accountCount: 4 },
-    { id: "5", name: "Google", accountCount: 3 },
-    { id: "6", name: "HDFC", accountCount: 1 },
-    { id: "7", name: "Nure Campus", accountCount: 1 },
-    { id: "8", name: "IIITD", accountCount: 2 },
-  ];
+  useEffect(() => {
+    loadApplications();
+  }, []);
+
+  const loadApplications = async () => {
+    setLoading(true);
+    try {
+      const data = await passwordsAPI.getApplications();
+      const platformMap = new Map<string, number>();
+      
+      // Count accounts per platform
+      data.forEach((app: any) => {
+        const count = platformMap.get(app.application_name) || 0;
+        platformMap.set(app.application_name, count + app.total_accounts);
+      });
+      
+      // Convert to array
+      const platformList: PasswordPlatform[] = Array.from(platformMap.entries()).map(([name, count], index) => ({
+        id: (index + 1).toString(),
+        name,
+        accountCount: count,
+      }));
+      
+      setPlatforms(platformList);
+    } catch (error: any) {
+      console.error("Error loading applications:", error);
+      Alert.alert("Error", "Failed to load passwords");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredPlatforms = platforms.filter((platform) => {
     if (searchQuery) {
@@ -79,25 +105,37 @@ export default function Vaultscreen({ navigation, route }: any) {
       </Pressable>
 
       {/* Platforms List */}
-      <FlatList
-        data={filteredPlatforms}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <Pressable
-            style={styles.platformItem}
-            onPress={() => handlePlatformPress(item.name)}
-          >
-            <View style={styles.platformContent}>
-              <Text style={styles.platformName}>{item.name}</Text>
-              <Text style={styles.platformCount}>
-                {item.accountCount} {item.accountCount === 1 ? "account" : "accounts"}
-              </Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4267FF" />
+          <Text style={styles.loadingText}>Loading passwords...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredPlatforms}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => (
+            <Pressable
+              style={styles.platformItem}
+              onPress={() => handlePlatformPress(item.name)}
+            >
+              <View style={styles.platformContent}>
+                <Text style={styles.platformName}>{item.name}</Text>
+                <Text style={styles.platformCount}>
+                  {item.accountCount} {item.accountCount === 1 ? "account" : "accounts"}
+                </Text>
+              </View>
+              <Text style={styles.menuIcon}>⋮</Text>
+            </Pressable>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No passwords found</Text>
             </View>
-            <Text style={styles.menuIcon}>⋮</Text>
-          </Pressable>
-        )}
-      />
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -198,6 +236,25 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: "#1B1F3B",
     marginLeft: 10,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#6A7181",
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: "center",
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#6A7181",
   },
 });
 

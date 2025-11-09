@@ -8,8 +8,19 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { PasswordSecurityService, PasswordAnalysis } from "../services/PasswordSecurityService";
-import { getAllMockPasswords } from "../services/MockPasswordData";
+import { securityAPI } from "../services/api";
+
+interface PasswordAnalysis {
+  total_passwords: number;
+  compromised_count: number;
+  weak_count: number;
+  reused_count: number;
+  strong_count: number;
+  health_score: number;
+  compromised_passwords: any[];
+  weak_passwords: any[];
+  reused_passwords: any[];
+}
 
 export default function Securityscreen({ navigation }: any) {
   const [analysis, setAnalysis] = useState<PasswordAnalysis | null>(null);
@@ -23,15 +34,13 @@ export default function Securityscreen({ navigation }: any) {
   const scanPasswords = async () => {
     setLoading(true);
     try {
-      // Get all passwords (in real app, this would come from your database)
-      const passwords = getAllMockPasswords();
-      
-      // Analyze passwords
-      const result = await PasswordSecurityService.analyzePasswords(passwords);
+      // Call backend API for password analysis
+      const result = await securityAPI.analyzePasswords();
       setAnalysis(result);
       setLastScanned("Just now");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error scanning passwords:", error);
+      Alert.alert("Error", error.message || "Failed to analyze passwords");
     } finally {
       setLoading(false);
     }
@@ -93,14 +102,14 @@ export default function Securityscreen({ navigation }: any) {
         <View style={styles.overviewCard}>
           <Text style={styles.shieldIcon}>🛡️</Text>
           <Text style={styles.overviewTitle}>
-            {analysis.totalPasswords} Password{analysis.totalPasswords !== 1 ? "s" : ""} Analyzed
+            {analysis.total_passwords} Password{analysis.total_passwords !== 1 ? "s" : ""} Analyzed
           </Text>
           <Text style={styles.overviewSubtitle}>Last Scanned: {lastScanned}</Text>
           <View style={styles.healthScoreContainer}>
             <Text style={styles.healthScoreLabel}>Security Health:</Text>
-            <View style={[styles.healthScoreBadge, { backgroundColor: getHealthColor(analysis.healthScore) + "20" }]}>
-              <Text style={[styles.healthScoreText, { color: getHealthColor(analysis.healthScore) }]}>
-                {getHealthEmoji(analysis.healthScore)} {analysis.healthScore}%
+            <View style={[styles.healthScoreBadge, { backgroundColor: getHealthColor(analysis.health_score) + "20" }]}>
+              <Text style={[styles.healthScoreText, { color: getHealthColor(analysis.health_score) }]}>
+                {getHealthEmoji(analysis.health_score)} {analysis.health_score}%
               </Text>
             </View>
           </View>
@@ -113,7 +122,7 @@ export default function Securityscreen({ navigation }: any) {
         <View style={styles.summaryContainer}>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryIcon}>🔒</Text>
-            <Text style={styles.summaryTitle}>{analysis.strongCount} Strong</Text>
+            <Text style={styles.summaryTitle}>{analysis.strong_count} Strong</Text>
             <Text style={styles.summarySubtitle}>Secure passwords</Text>
           </View>
           <View style={styles.summaryCard}>
@@ -127,7 +136,7 @@ export default function Securityscreen({ navigation }: any) {
         <View style={styles.alertsSection}>
           <Text style={styles.sectionTitle}>Security Alerts:</Text>
 
-          {analysis.compromisedCount > 0 && (
+          {analysis.compromised_count > 0 && (
             <Pressable
               style={[styles.alertCard, styles.criticalAlert]}
               onPress={() => handleAlertPress("compromised")}
@@ -136,15 +145,15 @@ export default function Securityscreen({ navigation }: any) {
                 <View style={styles.alertHeader}>
                   <Text style={styles.alertIcon}>🚨</Text>
                   <Text style={[styles.alertTitle, styles.criticalTitle]}>
-                    {analysis.compromisedCount} Compromised Password{analysis.compromisedCount !== 1 ? "s" : ""}
+                    {analysis.compromised_count} Compromised Password{analysis.compromised_count !== 1 ? "s" : ""}
                   </Text>
                 </View>
                 <Text style={styles.alertDescription}>
-                  {analysis.compromisedPasswords.length > 0 && (
+                  {analysis.compromised_passwords.length > 0 && (
                     <>
-                      Your '{analysis.compromisedPasswords[0].platform}' and{' '}
-                      {analysis.compromisedCount > 1
-                        ? `${analysis.compromisedCount - 1} other password${analysis.compromisedCount > 2 ? "s" : ""}`
+                      Your '{analysis.compromised_passwords[0].platform}' and{' '}
+                      {analysis.compromised_count > 1
+                        ? `${analysis.compromised_count - 1} other password${analysis.compromised_count > 2 ? "s" : ""}`
                         : ""}{' '}
                       found in data breaches
                     </>
@@ -155,7 +164,7 @@ export default function Securityscreen({ navigation }: any) {
             </Pressable>
           )}
 
-          {analysis.weakCount > 0 && (
+          {analysis.weak_count > 0 && (
             <Pressable
               style={[styles.alertCard, styles.warningAlert]}
               onPress={() => handleAlertPress("weak")}
@@ -164,15 +173,15 @@ export default function Securityscreen({ navigation }: any) {
                 <View style={styles.alertHeader}>
                   <Text style={styles.alertIcon}>⚠️</Text>
                   <Text style={[styles.alertTitle, styles.warningTitle]}>
-                    {analysis.weakCount} Weak Password{analysis.weakCount !== 1 ? "s" : ""}
+                    {analysis.weak_count} Weak Password{analysis.weak_count !== 1 ? "s" : ""}
                   </Text>
                 </View>
                 <Text style={styles.alertDescription}>
-                  {analysis.weakPasswords.length > 0 && (
+                  {analysis.weak_passwords.length > 0 && (
                     <>
-                      Your '{analysis.weakPasswords[0].platform}' and{' '}
-                      {analysis.weakCount > 1
-                        ? `${analysis.weakCount - 1} other password${analysis.weakCount > 2 ? "s" : ""}`
+                      Your '{analysis.weak_passwords[0].platform}' and{' '}
+                      {analysis.weak_count > 1
+                        ? `${analysis.weak_count - 1} other password${analysis.weak_count > 2 ? "s" : ""}`
                         : ""}{' '}
                       are vulnerable
                     </>
@@ -183,7 +192,7 @@ export default function Securityscreen({ navigation }: any) {
             </Pressable>
           )}
 
-          {analysis.reusedCount > 0 && (
+          {analysis.reused_count > 0 && (
             <Pressable
               style={[styles.alertCard, styles.infoAlert]}
               onPress={() => handleAlertPress("reused")}
@@ -192,18 +201,18 @@ export default function Securityscreen({ navigation }: any) {
                 <View style={styles.alertHeader}>
                   <Text style={styles.alertIcon}>🔁</Text>
                   <Text style={[styles.alertTitle, styles.infoTitle]}>
-                    {analysis.reusedCount} Reused Password{analysis.reusedCount !== 1 ? "s" : ""}
+                    {analysis.reused_count} Reused Password{analysis.reused_count !== 1 ? "s" : ""}
                   </Text>
                 </View>
                 <Text style={styles.alertDescription}>
-                  You have {analysis.reusedCount} reused or similar password{analysis.reusedCount !== 1 ? "s" : ""}
+                  You have {analysis.reused_count} reused or similar password{analysis.reused_count !== 1 ? "s" : ""}
                 </Text>
                 <Text style={styles.alertAction}>Review & Replace →</Text>
               </View>
             </Pressable>
           )}
 
-          {analysis.compromisedCount === 0 && analysis.weakCount === 0 && analysis.reusedCount === 0 && (
+          {analysis.compromised_count === 0 && analysis.weak_count === 0 && analysis.reused_count === 0 && (
             <View style={[styles.alertCard, styles.successAlert]}>
               <View style={styles.alertContent}>
                 <Text style={styles.alertIcon}>✅</Text>

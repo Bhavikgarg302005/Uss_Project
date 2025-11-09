@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,8 +6,11 @@ import {
   Pressable,
   StyleSheet,
   FlatList,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { groupsAPI } from "../services/api";
 
 interface Group {
   id: string;
@@ -17,16 +20,38 @@ interface Group {
 
 export default function Groupsscreen({ navigation }: any) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [groups, setGroups] = useState<Group[]>([
-    { id: "1", name: "IIITD UsS", memberCount: 5 },
-    { id: "2", name: "Family", memberCount: 6 },
-    { id: "3", name: "Friends", memberCount: 3 },
-    { id: "4", name: "Design Club", memberCount: 9 },
-    { id: "5", name: "E-Cell", memberCount: 11 },
-    { id: "6", name: "Technical Council", memberCount: 7 },
-    { id: "7", name: "BTP", memberCount: 3 },
-    { id: "8", name: "IIITD-Tech Council", memberCount: 2 },
-  ]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadGroups();
+  }, []);
+
+  const loadGroups = async () => {
+    setLoading(true);
+    try {
+      const data = await groupsAPI.getAll();
+      // Group by group_name and count members
+      const groupMap = new Map<string, number>();
+      data.forEach((member: any) => {
+        const count = groupMap.get(member.group_name) || 0;
+        groupMap.set(member.group_name, count + 1);
+      });
+      
+      const groupList: Group[] = Array.from(groupMap.entries()).map(([name, memberCount], index) => ({
+        id: (index + 1).toString(),
+        name,
+        memberCount,
+      }));
+      
+      setGroups(groupList);
+    } catch (error: any) {
+      console.error("Error loading groups:", error);
+      Alert.alert("Error", "Failed to load groups");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredGroups = groups.filter((group) =>
     group.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -72,25 +97,37 @@ export default function Groupsscreen({ navigation }: any) {
       </Pressable>
 
       {/* Groups List */}
-      <FlatList
-        data={filteredGroups}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <Pressable
-            style={styles.groupItem}
-            onPress={() => handleGroupPress(item)}
-          >
-            <View style={styles.groupContent}>
-              <Text style={styles.groupName}>{item.name}</Text>
-              <Text style={styles.groupCount}>
-                {item.memberCount} {item.memberCount === 1 ? "Member" : "Members"}
-              </Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4267FF" />
+          <Text style={styles.loadingText}>Loading groups...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredGroups}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => (
+            <Pressable
+              style={styles.groupItem}
+              onPress={() => handleGroupPress(item)}
+            >
+              <View style={styles.groupContent}>
+                <Text style={styles.groupName}>{item.name}</Text>
+                <Text style={styles.groupCount}>
+                  {item.memberCount} {item.memberCount === 1 ? "Member" : "Members"}
+                </Text>
+              </View>
+              <Text style={styles.menuIcon}>⋮</Text>
+            </Pressable>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No groups found</Text>
             </View>
-            <Text style={styles.menuIcon}>⋮</Text>
-          </Pressable>
-        )}
-      />
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -191,6 +228,25 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: "#1B1F3B",
     marginLeft: 10,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#6A7181",
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: "center",
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#6A7181",
   },
 });
 

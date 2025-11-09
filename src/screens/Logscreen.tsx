@@ -6,17 +6,41 @@ import {
   Pressable,
   StyleSheet,
   Image,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
+import { authAPI, setAuthToken } from "../services/api";
 
 export default function Logscreen({ navigation }: any) {
   console.log("NAVIGATION PROP IN LOGSCREEN: ", navigation);
   const [username, setUsername] = useState("");
   const [masterPassword, setMasterPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    console.log("Login pressed");
-    // TODO: Add authentication logic
-    navigation.navigate("Home");
+  const handleLogin = async () => {
+    if (!username || !masterPassword) {
+      Alert.alert("Error", "Please enter username and password");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await authAPI.login(username, masterPassword);
+      
+      if (response.access_token) {
+        setAuthToken(response.access_token);
+        Alert.alert("Success", "Login successful!", [
+          {
+            text: "OK",
+            onPress: () => navigation.navigate("Home"),
+          },
+        ]);
+      }
+    } catch (error: any) {
+      Alert.alert("Login Failed", error.message || "Invalid credentials");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -50,9 +74,16 @@ export default function Logscreen({ navigation }: any) {
       </View>
 
       {/* Login Button */}
-      <Pressable style={styles.loginButton} onPress={handleLogin}>
-        <Text style={styles.loginButtonText}>Login</Text>
-        {/* Here is the API  we called that will be verifying and tell wheather such combination exitst or not*/}
+      <Pressable
+        style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+        onPress={handleLogin}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.loginButtonText}>Login</Text>
+        )}
       </Pressable>
 
       {/* OR Divider */}
@@ -229,3 +260,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+

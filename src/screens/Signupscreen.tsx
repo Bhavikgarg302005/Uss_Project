@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,9 +6,11 @@ import {
   Pressable,
   StyleSheet,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { Alert } from "react-native";
+import { authAPI, setAuthToken } from "../services/api";
 
 export default function Signupscreen({ navigation }: any) {
   console.log("NAVIGATION PROP IN LOGSCREEN: ", navigation);
@@ -18,16 +20,31 @@ export default function Signupscreen({ navigation }: any) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [securityQuestion, setSecurityQuestion] = useState("");
   const [answer, setAnswer] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [questions, setQuestions] = useState<Array<{ question_id: number; question_text: string }>>([]);
 
-  const questions = [
-    "What is the name of your first school?",
-    "What is the name of your first pet?",
-    "What is your favorite color?",
-    "What was the name of your first teacher?",
-  ];
+  useEffect(() => {
+    loadSecurityQuestions();
+  }, []);
 
-const handleSignup = () => {
-  if (!username || !password || !confirmPassword || !answer) {
+  const loadSecurityQuestions = async () => {
+    try {
+      const data = await authAPI.getSecurityQuestions();
+      setQuestions(data);
+    } catch (error) {
+      console.error("Error loading security questions:", error);
+      // Fallback to default questions
+      setQuestions([
+        { question_id: 1, question_text: "What is the name of your first school?" },
+        { question_id: 2, question_text: "What is the name of your first pet?" },
+        { question_id: 3, question_text: "What is your favorite color?" },
+        { question_id: 4, question_text: "What was the name of your first teacher?" },
+      ]);
+    }
+  };
+
+const handleSignup = async () => {
+  if (!username || !password || !confirmPassword || !answer || !securityQuestion) {
     Alert.alert("Error", "Please fill in all fields.");
     return;
   }
@@ -37,13 +54,25 @@ const handleSignup = () => {
     return;
   }
 
-  // TODO: Add API call for signup
-  Alert.alert("Success", "Account created successfully!", [
-    {
-      text: "OK",
-      onPress: () => navigation.navigate("Login"),
-    },
-  ]);
+  setLoading(true);
+  try {
+    const questionId = parseInt(securityQuestion);
+    const response = await authAPI.signup(username, password, confirmPassword, questionId, answer);
+    
+    if (response.access_token) {
+      setAuthToken(response.access_token);
+      Alert.alert("Success", "Account created successfully!", [
+        {
+          text: "OK",
+          onPress: () => navigation.navigate("Home"),
+        },
+      ]);
+    }
+  } catch (error: any) {
+    Alert.alert("Signup Failed", error.message || "Failed to create account");
+  } finally {
+    setLoading(false);
+  }
 };
 
 
@@ -120,8 +149,8 @@ const handleSignup = () => {
           dropdownIconColor="#1B1F3B"
         >
           <Picker.Item label="Choose a question" value="" />
-          {questions.map((q, idx) => (
-            <Picker.Item key={idx} label={q} value={q} />
+          {questions.map((q) => (
+            <Picker.Item key={q.question_id} label={q.question_text} value={q.question_id.toString()} />
           ))}
         </Picker>
       </View>
@@ -144,8 +173,16 @@ const handleSignup = () => {
         </Pressable>
 
         {/* Signup Button */}
-        <Pressable style={styles.signupButton} onPress={handleSignup}>
-        <Text style={styles.signupButtonText}>Signup</Text>
+        <Pressable
+          style={[styles.signupButton, loading && styles.signupButtonDisabled]}
+          onPress={handleSignup}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#000" />
+          ) : (
+            <Text style={styles.signupButtonText}>Signup</Text>
+          )}
         </Pressable>
     </View>
   );
@@ -258,5 +295,8 @@ const styles = StyleSheet.create({
     color: "#000",
     fontSize: 20,
     fontWeight: "700",
+  },
+  signupButtonDisabled: {
+    opacity: 0.7,
   },
 });
