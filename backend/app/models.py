@@ -19,7 +19,7 @@ class User(Base):
     # Security: Group data stored as JSON with validation
     grp = Column(JSON, default=list)
     question_id = Column(Integer, ForeignKey("questions.question_id"), nullable=True)
-    answers = Column(JSON, default=list)  # Security: Answers stored as JSON array
+    answers = Column(Text, nullable=True)  # Security: Answers stored as JSON string
     
     # Relationships
     passwords = relationship("Password", back_populates="user", cascade="all, delete-orphan")

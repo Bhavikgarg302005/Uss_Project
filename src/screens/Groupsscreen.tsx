@@ -91,7 +91,7 @@ export default function Groupsscreen({ navigation }: any) {
       {/* Add Group Button */}
       <Pressable
         style={styles.addButton}
-        onPress={() => navigation.navigate("AddGroup")}
+        onPress={() => navigation.navigate("SelectGroups")}
       >
         <Text style={styles.addButtonText}>+ Add Groups</Text>
       </Pressable>

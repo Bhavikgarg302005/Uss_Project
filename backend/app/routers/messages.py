@@ -3,6 +3,7 @@ Messages/Notifications routes
 Security: Message management for trusted user requests and group invitations
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 from slowapi import Limiter
@@ -21,6 +22,14 @@ limiter = Limiter(key_func=get_remote_address)
 # This is a simplified implementation - in production, create a messages table
 messages_store: Dict[int, List[Dict[str, Any]]] = {}
 
+
+class TrustedUserRequestBody(BaseModel):
+    target_username: str
+
+
+class GroupInvitationBody(BaseModel):
+    target_username: str
+    group_name: str
 
 @router.get("", response_model=List[Dict[str, Any]])
 @limiter.limit(settings.RATE_LIMIT_GENERAL)
@@ -46,7 +55,7 @@ async def get_messages(
 @limiter.limit(settings.RATE_LIMIT_GENERAL)
 async def create_trusted_user_request(
     request: Request,
-    target_username: str,
+    body: TrustedUserRequestBody,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -56,7 +65,7 @@ async def create_trusted_user_request(
     """
     # Security: Find target user
     result = await db.execute(
-        select(User).where(User.username == target_username)
+        select(User).where(User.username == body.target_username)
     )
     target_user = result.scalar_one_or_none()
     
@@ -95,8 +104,7 @@ async def create_trusted_user_request(
 @limiter.limit(settings.RATE_LIMIT_GENERAL)
 async def create_group_invitation(
     request: Request,
-    target_username: str,
-    group_name: str,
+    body: GroupInvitationBody,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -106,7 +114,7 @@ async def create_group_invitation(
     """
     # Security: Find target user
     result = await db.execute(
-        select(User).where(User.username == target_username)
+        select(User).where(User.username == body.target_username)
     )
     target_user = result.scalar_one_or_none()
     
@@ -121,7 +129,7 @@ async def create_group_invitation(
         "id": f"group_{current_user.user_id}_{datetime.utcnow().timestamp()}",
         "type": "group_invitation",
         "from": current_user.username,
-        "groupName": group_name,
+        "groupName": body.group_name,
         "message": "invited you to join the group",
         "timestamp": datetime.utcnow().isoformat(),
         "status": "pending",
@@ -220,4 +228,5 @@ async def get_message_count(
     pending_count = len([msg for msg in user_messages if msg.get("status") == "pending"])
     
     return {"count": pending_count}
+
 

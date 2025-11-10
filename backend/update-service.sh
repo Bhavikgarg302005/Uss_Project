@@ -48,3 +48,4 @@ echo "🌐 API URL: http://${VM_IP}:8000"
 # Cleanup
 rm backend-update.tar.gz
 
+

@@ -6,10 +6,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.encoders import jsonable_encoder
 from app.config import settings
 from app.database import test_connection
 from app.middleware import setup_middleware
 from app.routers import auth, passwords, groups, security, faqs, messages
+from app.routers import users as users_router
 import uvicorn
 import logging
 
@@ -54,11 +56,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     Custom validation exception handler
     Security: Sanitized error messages
     """
+    details = exc.errors() if settings.DEBUG else "Invalid input"
+    safe_details = jsonable_encoder(details)
+
     return JSONResponse(
         status_code=422,
         content={
             "error": "Validation error",
-            "details": exc.errors() if settings.DEBUG else "Invalid input"
+            "details": safe_details
         }
     )
 
@@ -97,6 +102,7 @@ app.include_router(groups.router)
 app.include_router(security.router)
 app.include_router(faqs.router)
 app.include_router(messages.router)
+app.include_router(users_router.router)
 
 
 # Security: Startup event

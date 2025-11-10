@@ -4,10 +4,11 @@
  */
 
 // Production API URL - points to VM
-const API_BASE_URL = "http://192.168.2.234:8000";
+const API_BASE_URL = "http://10.0.2.2:8000"
 
 // Security: Token storage (in production, use secure storage like Keychain/Keystore)
 let authToken: string | null = null;
+let currentUser: { user_id: number; username: string } | null = null;
 
 export const setAuthToken = (token: string | null) => {
   authToken = token;
@@ -23,6 +24,14 @@ export const getAuthToken = (): string | null => {
   return authToken;
 };
 
+export const setCurrentUser = (user: { user_id: number; username: string } | null) => {
+  currentUser = user;
+};
+
+export const getCurrentUser = (): { user_id: number; username: string } | null => {
+  return currentUser;
+};
+
 // Security: API request helper with authentication
 const apiRequest = async (
   endpoint: string,
@@ -30,7 +39,7 @@ const apiRequest = async (
 ): Promise<any> => {
   const url = `${API_BASE_URL}${endpoint}`;
   
-  const headers: Record<string, string> = {
+  const headers: HeadersInit = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> || {}),
   };
@@ -74,6 +83,9 @@ export const authAPI = {
     });
     if (data.access_token) {
       setAuthToken(data.access_token);
+      if (data.user_id && data.username) {
+        setCurrentUser({ user_id: data.user_id, username: data.username });
+      }
     }
     return data;
   },
@@ -97,6 +109,9 @@ export const authAPI = {
     });
     if (data.access_token) {
       setAuthToken(data.access_token);
+      if (data.user_id && data.username) {
+        setCurrentUser({ user_id: data.user_id, username: data.username });
+      }
     }
     return data;
   },
@@ -327,6 +342,19 @@ export const messagesAPI = {
 
   getCount: async () => {
     return apiRequest("/api/messages/count", {
+      method: "GET",
+    });
+  },
+};
+
+// Users API
+export const usersAPI = {
+  search: async (query: string, limit: number = 10) => {
+    const params = new URLSearchParams({
+      q: query,
+      limit: String(limit),
+    });
+    return apiRequest(`/api/users/search?${params.toString()}`, {
       method: "GET",
     });
   },

@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { passwordsAPI, messagesAPI } from "../services/api";
+import { passwordsAPI, messagesAPI, getCurrentUser } from "../services/api";
 
 interface PasswordItem {
   id: string;
@@ -25,10 +25,22 @@ export default function Homescreen({ navigation }: any) {
   const [pendingMessagesCount, setPendingMessagesCount] = useState(0);
   const [recentlyAdded, setRecentlyAdded] = useState<PasswordItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [username, setUsername] = useState<string>("");
+  const initials = React.useMemo(() => {
+    if (!username) return "U";
+    const parts = username.split(/[\s._-]+/).filter(Boolean).slice(0, 2);
+    const letters = parts.map((s) => (s && s[0] ? s[0].toUpperCase() : ""));
+    const joined = letters.join("");
+    return joined || "U";
+  }, [username]);
 
   useEffect(() => {
     loadRecentPasswords();
     loadMessageCount();
+    const user = getCurrentUser();
+    if (user?.username) {
+      setUsername(user.username);
+    }
   }, []);
 
   // Refresh data when screen is focused
@@ -110,9 +122,11 @@ export default function Homescreen({ navigation }: any) {
         <View style={styles.header}>
           <View style={styles.userSection}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>AV</Text>
+              <Text style={styles.avatarText}>{initials}</Text>
             </View>
-            <Text style={styles.username}>Akshat V.</Text>
+            <Text style={styles.username}>
+              {username || "User"}
+            </Text>
           </View>
           <View style={styles.headerRight}>
             <Pressable

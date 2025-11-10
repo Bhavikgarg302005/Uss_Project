@@ -2,16 +2,22 @@
 Database connection and session management
 Security: SSL connections, connection pooling, parameterized queries
 """
-from sqlalchemy import create_engine, MetaData
+from sqlalchemy import create_engine, MetaData, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import settings
 import aiomysql
 from typing import AsyncGenerator
+from urllib.parse import quote_plus
 
 # Security: Use SSL for database connections in production
 # Security: Connection string with SSL parameters
-DATABASE_URL = f"mysql+aiomysql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}?charset=utf8mb4"
+encoded_user = quote_plus(settings.DB_USER)
+encoded_password = quote_plus(settings.DB_PASSWORD)
+DATABASE_URL = (
+    f"mysql+aiomysql://{encoded_user}:{encoded_password}"
+    f"@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}?charset=utf8mb4"
+)
 
 # Security: Create async engine with pool settings for connection security
 engine = create_async_engine(
@@ -59,7 +65,7 @@ async def test_connection():
     """Test database connection with security checks"""
     try:
         async with engine.begin() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         print("✅ Database connection successful")
         return True
     except Exception as e:

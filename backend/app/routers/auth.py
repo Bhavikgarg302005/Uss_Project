@@ -201,7 +201,10 @@ async def forgot_password(
         )
     
     # Security: Verify answer
-    answers = json.loads(user.answers or "[]")
+    try:
+        answers = json.loads(user.answers or "[]")
+    except (json.JSONDecodeError, TypeError):
+        answers = [user.answers] if user.answers else []
     if forgot_data.answer not in answers:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -249,7 +252,10 @@ async def reset_password(
         verified = verify_password(reset_data.current_password, user.pswd)
     elif reset_data.question_id and reset_data.answer:
         if user.question_id == reset_data.question_id:
-            answers = json.loads(user.answers or "[]")
+            try:
+                answers = json.loads(user.answers or "[]")
+            except (json.JSONDecodeError, TypeError):
+                answers = [user.answers] if user.answers else []
             verified = reset_data.answer in answers
     
     if not verified:

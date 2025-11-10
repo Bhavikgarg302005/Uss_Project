@@ -82,3 +82,4 @@ echo "2. Copy .env.template to .env and configure it"
 echo "3. Run: source venv/bin/activate && pip install -r requirements.txt"
 echo "4. Run: sudo ./deploy.sh (to set up systemd service)"
 
+
