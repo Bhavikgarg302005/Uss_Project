@@ -237,10 +237,26 @@ export const groupsAPI = {
       method: "GET",
     });
   },
+  listSummaries: async () => {
+    return apiRequest("/api/groups/list", {
+      method: "GET",
+    });
+  },
+  create: async (groupName: string) => {
+    return apiRequest("/api/groups/create", {
+      method: "POST",
+      body: JSON.stringify({ group_name: groupName }),
+    });
+  },
 
   getMembers: async (groupName: string) => {
     return apiRequest(`/api/groups/${encodeURIComponent(groupName)}/members`, {
       method: "GET",
+    });
+  },
+  removeMember: async (groupName: string, userId: number) => {
+    return apiRequest(`/api/groups/${encodeURIComponent(groupName)}/members/${userId}`, {
+      method: "DELETE",
     });
   },
 
@@ -251,6 +267,15 @@ export const groupsAPI = {
         group_name: groupName,
         password_id: passwordId,
         user_ids: userIds,
+      }),
+    });
+  },
+  shareAll: async (groupName: string, passwordId: number) => {
+    return apiRequest("/api/groups/share-all", {
+      method: "POST",
+      body: JSON.stringify({
+        group_name: groupName,
+        password_id: passwordId,
       }),
     });
   },

@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { securityAPI } from "../services/api";
+import { securityAPI, getCurrentUser } from "../services/api";
 
 interface PasswordAnalysis {
   total_passwords: number;
@@ -26,9 +26,18 @@ export default function Securityscreen({ navigation }: any) {
   const [analysis, setAnalysis] = useState<PasswordAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastScanned, setLastScanned] = useState<string>("Just now");
+  const [username, setUsername] = useState<string>("");
+  const [initials, setInitials] = useState<string>("U");
 
   useEffect(() => {
     scanPasswords();
+    const u = getCurrentUser();
+    const name = u?.username || "User";
+    setUsername(name);
+    const parts = name.split(/[\s._-]+/).filter(Boolean).slice(0, 2);
+    const letters = parts.map((s) => (s && s[0] ? s[0].toUpperCase() : ""));
+    const joined = letters.join("");
+    setInitials(joined || "U");
   }, []);
 
   const scanPasswords = async () => {
@@ -84,9 +93,9 @@ export default function Securityscreen({ navigation }: any) {
       <View style={styles.header}>
         <View style={styles.userSection}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>AV</Text>
+            <Text style={styles.avatarText}>{initials}</Text>
           </View>
-          <Text style={styles.username}>Akshat V.</Text>
+          <Text style={styles.username}>{username}</Text>
         </View>
         <Pressable style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutText}>→ Logout</Text>

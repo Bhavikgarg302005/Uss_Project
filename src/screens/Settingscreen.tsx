@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Image,
   Alert,
 } from "react-native";
+import { getCurrentUser } from "../services/api";
 
 interface TrustedUser {
   id: string;
@@ -29,6 +30,12 @@ export default function Settingscreen({ navigation }: any) {
   const [showModal, setShowModal] = useState(false);
   const [newUsername, setNewUsername] = useState("");
   const [masterPassword, setMasterPassword] = useState("");
+  const [username, setUsername] = useState<string>("");
+
+  useEffect(() => {
+    const user = getCurrentUser();
+    setUsername(user?.username || "User");
+  }, []);
 
   const handleAddTrustedUser = () => {
     if (!newUsername || !masterPassword) {
@@ -75,7 +82,7 @@ export default function Settingscreen({ navigation }: any) {
             source={require("../assets/profile.png")}
             style={styles.profileIcon}
           /> */}
-          <Text style={styles.username}>Akshat V.</Text>
+          <Text style={styles.username}>{username}</Text>
         </View>
         <Pressable style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutText}>Logout</Text>

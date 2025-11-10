@@ -16,12 +16,14 @@ interface Group {
   id: string;
   name: string;
   memberCount: number;
+  isAdmin?: boolean;
 }
 
 export default function Groupsscreen({ navigation }: any) {
   const [searchQuery, setSearchQuery] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     loadGroups();
@@ -30,26 +32,40 @@ export default function Groupsscreen({ navigation }: any) {
   const loadGroups = async () => {
     setLoading(true);
     try {
-      const data = await groupsAPI.getAll();
-      // Group by group_name and count members
-      const groupMap = new Map<string, number>();
-      data.forEach((member: any) => {
-        const count = groupMap.get(member.group_name) || 0;
-        groupMap.set(member.group_name, count + 1);
-      });
-      
-      const groupList: Group[] = Array.from(groupMap.entries()).map(([name, memberCount], index) => ({
-        id: (index + 1).toString(),
-        name,
-        memberCount,
+      const data = await groupsAPI.listSummaries();
+      const groupList: Group[] = data.map((g: any, index: number) => ({
+        id: `${g.group_name}-${index}`,
+        name: g.group_name,
+        memberCount: g.member_count ?? 0,
+        isAdmin: !!g.is_admin,
       }));
-      
       setGroups(groupList);
     } catch (error: any) {
       console.error("Error loading groups:", error);
       Alert.alert("Error", "Failed to load groups");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const createGroup = async () => {
+    if (creating) return;
+    // Simple prompt (works on iOS; on Android this no-ops in some RN versions)
+    // Fallback: use a default name if prompt unavailable
+    // @ts-ignore
+    let name = typeof prompt === "function" ? prompt("Enter group name") : "";
+    if (!name) {
+      name = `group-${Date.now()}`;
+    }
+    try {
+      setCreating(true);
+      await groupsAPI.create(name);
+      await loadGroups();
+    } catch (e) {
+      console.error("Create group failed:", e);
+      Alert.alert("Error", "Failed to create group");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -88,12 +104,11 @@ export default function Groupsscreen({ navigation }: any) {
         />
       </View>
 
-      {/* Add Group Button */}
-      <Pressable
-        style={styles.addButton}
-        onPress={() => navigation.navigate("SelectGroups")}
-      >
-        <Text style={styles.addButtonText}>+ Add Groups</Text>
+      {/* Create Group Button */}
+      <Pressable style={styles.addButton} onPress={createGroup}>
+        <Text style={styles.addButtonText}>
+          {creating ? "Creating..." : "+ Create Group"}
+        </Text>
       </Pressable>
 
       {/* Groups List */}
@@ -116,6 +131,7 @@ export default function Groupsscreen({ navigation }: any) {
                 <Text style={styles.groupName}>{item.name}</Text>
                 <Text style={styles.groupCount}>
                   {item.memberCount} {item.memberCount === 1 ? "Member" : "Members"}
+                  {item.isAdmin ? " • Admin" : ""}
                 </Text>
               </View>
               <Text style={styles.menuIcon}>⋮</Text>
