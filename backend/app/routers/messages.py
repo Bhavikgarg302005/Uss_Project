@@ -228,5 +228,3 @@ async def get_message_count(
     pending_count = len([msg for msg in user_messages if msg.get("status") == "pending"])
     
     return {"count": pending_count}
-
-
