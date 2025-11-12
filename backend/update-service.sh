@@ -49,3 +49,6 @@ echo "🌐 API URL: http://${VM_IP}:8000"
 rm backend-update.tar.gz
 
 
+
+
+

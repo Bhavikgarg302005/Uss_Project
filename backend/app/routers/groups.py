@@ -2,16 +2,16 @@
 Group management routes
 Security: Group operations with authorization checks
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, func, delete
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from typing import List
+from typing import List, Dict, Any
+from pydantic import BaseModel, Field
 from app.database import get_db
 from app.models import User, GroupMember, Password
 from app.schemas import GroupMemberResponse, GroupShareRequest
-from fastapi import HTTPException, status
 from app.dependencies import get_current_user
 from app.security import sanitize_input
 from app.config import settings
@@ -295,3 +295,270 @@ async def get_shared_passwords(
         }
         for p, group_name in shared
     ]
+
+
+# ========================
+# Extended group features
+# ========================
+
+class CreateGroupBody(BaseModel):
+    group_name: str = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/create", status_code=status.HTTP_201_CREATED)
+@limiter.limit(settings.RATE_LIMIT_GENERAL)
+async def create_group(
+    request: Request,
+    body: CreateGroupBody,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new group; creator becomes admin.
+    """
+    group_name = body.group_name.strip()
+    if not group_name:
+        raise HTTPException(status_code=400, detail="Group name required")
+
+    existing = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_name == group_name,
+            GroupMember.user_id == current_user.user_id,
+        )
+    )
+    membership = existing.scalar_one_or_none()
+
+    if membership:
+        membership.admin_status = True
+        await db.commit()
+        return {"success": True, "message": "Group already exists; you are admin"}
+
+    new_group = GroupMember(
+        group_name=group_name,
+        user_id=current_user.user_id,
+        admin_status=True,
+        password_id=None,
+    )
+    db.add(new_group)
+    await db.commit()
+    return {"success": True, "message": "Group created"}
+
+
+@router.get("/list", response_model=List[Dict[str, Any]])
+@limiter.limit(settings.RATE_LIMIT_GENERAL)
+async def list_groups(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List groups the current user belongs to with membership counts and admin flag.
+    """
+    memberships = await db.execute(
+        select(GroupMember.group_name, GroupMember.admin_status).where(
+            GroupMember.user_id == current_user.user_id
+        )
+    )
+    results = memberships.all()
+    groups: List[Dict[str, Any]] = []
+    for group_name, is_admin in results:
+        count_result = await db.execute(
+            select(func.count()).select_from(GroupMember).where(
+                GroupMember.group_name == group_name
+            )
+        )
+        member_count = count_result.scalar_one() or 0
+        groups.append(
+            {
+                "group_name": group_name,
+                "member_count": int(member_count),
+                "is_admin": bool(is_admin),
+            }
+        )
+    return groups
+
+
+@router.delete("/{group_name}/members/{user_id}", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.RATE_LIMIT_GENERAL)
+async def remove_member(
+    request: Request,
+    group_name: str,
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Remove a user from a group. Only admins may remove members.
+    """
+    admin_check = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_name == group_name,
+            GroupMember.user_id == current_user.user_id,
+            GroupMember.admin_status == True,
+        )
+    )
+    admin_entry = admin_check.scalar_one_or_none()
+    if not admin_entry:
+        raise HTTPException(status_code=403, detail="Only admins can remove members")
+
+    if user_id == current_user.user_id:
+        admin_count_res = await db.execute(
+            select(func.count()).select_from(GroupMember).where(
+                GroupMember.group_name == group_name,
+                GroupMember.admin_status == True,
+            )
+        )
+        admin_count = admin_count_res.scalar_one() or 0
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="Cannot remove the only admin")
+
+    await db.execute(
+        delete(GroupMember).where(
+            GroupMember.group_name == group_name,
+            GroupMember.user_id == user_id,
+        )
+    )
+    await db.commit()
+    return {"success": True, "message": "Member removed"}
+
+
+class ShareAllBody(BaseModel):
+    group_name: str
+    password_id: int
+
+
+@router.post("/share-all", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.RATE_LIMIT_PASSWORD)
+async def share_password_to_all(
+    request: Request,
+    body: ShareAllBody,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Share a password with all members of a group.
+    """
+    password_check = await db.execute(
+        select(Password).where(
+            Password.password_id == body.password_id,
+            Password.user_id == current_user.user_id,
+        )
+    )
+    password = password_check.scalar_one_or_none()
+    if not password:
+        raise HTTPException(status_code=404, detail="Password not found or access denied")
+
+    admin_check = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_name == body.group_name,
+            GroupMember.user_id == current_user.user_id,
+            GroupMember.admin_status == True,
+        )
+    )
+    admin_entry = admin_check.scalar_one_or_none()
+    if not admin_entry:
+        raise HTTPException(status_code=403, detail="Only admins can share passwords")
+
+    members = await db.execute(
+        select(GroupMember).where(GroupMember.group_name == body.group_name)
+    )
+    for member in members.scalars().all():
+        member.password_id = body.password_id
+
+    await db.commit()
+    return {"success": True, "message": "Password shared with all members"}
+
+
+class RenameGroupBody(BaseModel):
+    group_name: str
+    new_name: str = Field(..., min_length=1, max_length=500)
+
+
+@router.put("/rename", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.RATE_LIMIT_GENERAL)
+async def rename_group(
+    request: Request,
+    body: RenameGroupBody,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Rename a group. Only admins can rename groups.
+    """
+    current_name = body.group_name.strip()
+    new_name = body.new_name.strip()
+
+    if not current_name or not new_name:
+        raise HTTPException(status_code=400, detail="Group name required")
+
+    if current_name == new_name:
+        return {"success": True, "message": "Group name unchanged"}
+
+    admin_check = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_name == current_name,
+            GroupMember.user_id == current_user.user_id,
+            GroupMember.admin_status == True,
+        )
+    )
+    admin_entry = admin_check.scalar_one_or_none()
+    if not admin_entry:
+        raise HTTPException(status_code=403, detail="Only admins can rename groups")
+
+    # Ensure group exists
+    members_res = await db.execute(
+        select(GroupMember).where(GroupMember.group_name == current_name)
+    )
+    members = members_res.scalars().all()
+    if not members:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    # Prevent duplicate name
+    existing_res = await db.execute(
+        select(GroupMember).where(GroupMember.group_name == new_name)
+    )
+    if existing_res.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Group name already in use")
+
+    for member in members:
+        member.group_name = new_name
+
+    await db.commit()
+    return {"success": True, "message": "Group renamed", "new_name": new_name}
+
+
+@router.delete("/{group_name}", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.RATE_LIMIT_GENERAL)
+async def delete_group(
+    request: Request,
+    group_name: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a group entirely (remove all memberships). Admins only.
+    """
+    group_name = group_name.strip()
+    if not group_name:
+        raise HTTPException(status_code=400, detail="Group name required")
+
+    admin_check = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_name == group_name,
+            GroupMember.user_id == current_user.user_id,
+            GroupMember.admin_status == True,
+        )
+    )
+    admin_entry = admin_check.scalar_one_or_none()
+    if not admin_entry:
+        raise HTTPException(status_code=403, detail="Only admins can delete groups")
+
+    members_res = await db.execute(
+        select(GroupMember.user_id).where(GroupMember.group_name == group_name)
+    )
+    if not members_res.all():
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    await db.execute(delete(GroupMember).where(GroupMember.group_name == group_name))
+    await db.commit()
+    return {"success": True, "message": "Group deleted"}

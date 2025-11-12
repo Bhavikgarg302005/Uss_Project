@@ -143,6 +143,8 @@ async def create_group_invitation(
     return {"success": True, "message": "Invitation sent successfully"}
 
 
+from sqlalchemy import text
+
 @router.post("/{message_id}/accept")
 @limiter.limit(settings.RATE_LIMIT_GENERAL)
 async def accept_message(
@@ -153,32 +155,65 @@ async def accept_message(
 ):
     """
     Accept a message (trusted user request or group invitation)
-    Security: Authentication required, message validation
+    Adds user to group_members table if applicable.
     """
     user_messages = messages_store.get(current_user.user_id, [])
-    
     message = next((msg for msg in user_messages if msg.get("id") == message_id), None)
-    
+
     if message is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Message not found"
-        )
-    
+        raise HTTPException(status_code=404, detail="Message not found")
+
     if message.get("status") != "pending":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Message already processed"
-        )
-    
-    # Security: Update message status
+        raise HTTPException(status_code=400, detail="Message already processed")
+
+    # Mark message as accepted
     message["status"] = "accepted"
-    
-    # TODO: Implement actual acceptance logic (add to trusted users, add to group, etc.)
-    
-    return {"success": True, "message": "Message accepted"}
 
+    # --- Handle group invitation acceptance ---
+    if message["type"] == "group_invitation":
+        group_name = message.get("groupName")
+        if not group_name:
+            raise HTTPException(status_code=400, detail="Invalid group name")
 
+        try:
+            # ✅ Check if already member using proper SQL text()
+            result = await db.execute(
+                text("""
+                    SELECT 1 FROM group_members
+                    WHERE group_name = :gname AND user_id = :uid
+                """),
+                {"gname": group_name, "uid": current_user.user_id},
+            )
+            existing = result.first()
+
+            if existing:
+                return {"success": True, "message": f"Already a member of {group_name}"}
+
+            # ✅ Insert new group member
+            await db.execute(
+                text("""
+                    INSERT INTO group_members (group_name, user_id, admin_status, password_id)
+                    VALUES (:gname, :uid, FALSE, NULL)
+                """),
+                {"gname": group_name, "uid": current_user.user_id},
+            )
+            await db.commit()
+
+            return {
+                "success": True,
+                "message": f"You have successfully joined the group '{group_name}'.",
+            }
+
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    # --- Handle trusted user request acceptance ---
+    elif message["type"] == "trusted_user_request":
+        return {"success": True, "message": "Trusted user request accepted."}
+
+    # Default case
+    return {"success": True, "message": "Message accepted."}
 @router.post("/{message_id}/reject")
 @limiter.limit(settings.RATE_LIMIT_GENERAL)
 async def reject_message(
